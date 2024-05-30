@@ -4,8 +4,7 @@ Parts of the code have been adapted and refactored from the `repeng` project.
 
 References
 ----------
--    Source Repository: [repeng](https://github.com/vgel/repeng/tree/main)
--    Author: [Theia](https://vgel.me/)
+-    Source Repository: [repeng](https://github.com/vgel/repeng/tree/main) authored by [Theia](https://vgel.me/).
 """
 
 import json
@@ -242,7 +241,6 @@ def train_and_apply_control_vector(
     model = ControlModel(
         wrapped_model, layer_ids=composer.llama_config.layer_ids
     )
-    # state.controlled_model = model
 
     bridge_dataset = make_dataset(
         template=chat_template_unparse([("user", "{persona}")]),
@@ -279,7 +277,15 @@ def train_and_apply_control_vector(
 
 @app.local_entrypoint()
 def main(suffix_filepath: str, question: str = "What are you?") -> None:
-    """Main entrypoint for the golden gate bridge."""
+    """Main entrypoint for the golden gate bridge.
+
+    Parameters
+    ----------
+    suffix_filepath : str
+        File path to load suffixes from.
+    question : str, optional
+        Question to ask the model, by default "What are you?".
+    """
     suffixes = load_suffixes(suffix_filepath)
 
     composer = Composer()
@@ -287,7 +293,7 @@ def main(suffix_filepath: str, question: str = "What are you?") -> None:
 
     state = State()
 
-    trained_state = train_and_apply_control_vector.remote(
+    trained_state: State = train_and_apply_control_vector.remote(
         composer=composer, state=state, suffixes=suffixes, question=question
     )
-    pprint(trained_state)
+    pprint(trained_state.answers)

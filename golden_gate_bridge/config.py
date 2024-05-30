@@ -24,7 +24,7 @@ class Constants(str, Enum):
     TARGET_ARTIFACTS_DIR = "/artifacts"
     TIMEOUT = "1800"
     CONTAINER_IDLE_TIMEOUT = "600"
-    MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"  # ideally it is a configurable config and not a constant but needed for download_model_weights
+    MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
 
     def __str__(self) -> str:
         """Return the string representation of the constant.
@@ -91,7 +91,7 @@ app = App(
 VOLUME = Volume.from_name(
     label=Constants.SOURCE_ARTIFACTS_DIR, create_if_missing=True
 )
-GPU = modal.gpu.H100(count=2)  # modal.gpu.A100(size="80GB", count=2)
+GPU = modal.gpu.H100(count=2)
 
 
 class DatasetConfig(BaseModel):
@@ -108,7 +108,6 @@ class DatasetConfig(BaseModel):
         description="List out personas that you want the model to focus on negatively",
         examples=["sad"],
     )
-    suffix_file: str = "data/all_truncated_outputs.json"
 
 
 class GoldenGateBridgeConfig(DatasetConfig):
@@ -145,12 +144,14 @@ class GenerationConfig(BaseModel):
     `GenerationConfig` from `transformers` library."""
 
     pad_token_id: int = Field(default=None)
-    max_new_tokens: int = 128
-    repetition_penalty: float = 1.3
-    temperature: float = 0.9
+    max_new_tokens: int = 256
+    repetition_penalty: float = 1.25
+    temperature: float = 1.0
 
 
 class WandbConfig(BaseModel):
+    """Base class for wandb configuration."""
+
     project: str = "golden-gate-bridge-repeng"
     entity: str = "hongnangao"
 
