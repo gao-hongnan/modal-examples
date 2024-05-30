@@ -1,23 +1,16 @@
 """
-```python
-pip install modal
-python3 -m modal setup
-modal run main.py
-
-@app.cls vs @app.function - @app.cls is for class based entrypoints
-```
-https://modal.com/docs/examples/doc_ocr_jobs#model-cache
-How do I monitor gpu utilisation inside modal container? like https://github.com/XuehaiPan/nvitop
-
-For GPU count and size, and other params see: https://modal.com/docs/guide/gpu
+Configuration, State, Constants and Initialization.
 """
+import os
 from enum import Enum
-from typing import Dict, List
 
 import modal
 import modal.gpu
+import torch
 from modal import App, Image, Volume
 from pydantic import BaseModel, Field
+
+ALLOW_WANDB = os.environ.get("ALLOW_WANDB", "false").lower() == "true"
 
 
 class Constants(str, Enum):
@@ -42,6 +35,19 @@ class Constants(str, Enum):
         return str.__str__(self)
 
 
+class State(BaseModel):
+    """Base class for state."""
+
+    answers: list[dict[str, str]] = Field(default_factory=list)
+    # controlled_model: torch.nn.Module = Field(default=None)
+    controlled_vector: torch.Tensor = Field(default=None)
+
+    class Config:
+        """`torch.nn.Module` is not a supported serializable type by pydantic
+        so we add `arbitrary_types_allowed = True` to allow it."""
+        arbitrary_types_allowed = True
+
+
 def download_model_weights() -> None:
     """Download model weights from huggingface hub and cache it to `CACHE_DIR`."""
     from huggingface_hub import snapshot_download
@@ -62,14 +68,23 @@ IMAGE = (
         "pydantic~=2.0.0",
     )
     .run_function(
-        download_model_weights, secrets=[modal.Secret.from_name("huggingface")]
+        download_model_weights,
+        secrets=[
+            modal.Secret.from_name("huggingface"),
+        ],
     )
 )
 
 app = App(
     name=Constants.APP_NAME,
     image=IMAGE,
-    secrets=[modal.Secret.from_name("huggingface")],
+    secrets=[
+        modal.Secret.from_name("huggingface"),
+        modal.Secret.from_dict(
+            {"ALLOW_WANDB": os.environ.get("ALLOW_WANDB", "false")}
+        ),
+        *([modal.Secret.from_name("wandb")] if ALLOW_WANDB else []),
+    ],
 )
 
 VOLUME = Volume.from_name(
@@ -104,17 +119,6 @@ class GoldenGateBridgeConfig(DatasetConfig):
     negative_personas: list[str] = [""]
 
 
-class PsychedelicConfig(DatasetConfig):
-    """Dataset configuration for Psychedelic."""
-
-    positive_personas: list[str] = [
-        "Please act as if you are extremely high on psychedelic drugs"
-    ]
-    negative_personas: list[str] = [
-        "Please act as if you are sober from psychedelic drugs"
-    ]
-
-
 class RepengConfig(BaseModel):
     """Base class for repeng configuration."""
 
@@ -131,8 +135,8 @@ class TokenizerConfig(BaseModel):
 class LlamaConfig(BaseModel):
     """Base class for model configuration."""
 
-    device_map: str | Dict[str, int] | None = "auto"
-    layer_ids: List[int] = Field(default=list(range(20, 60)))
+    device_map: str | dict[str, int] | None = "auto"
+    layer_ids: list[int] = Field(default=list(range(20, 60)))
 
 
 class GenerationConfig(BaseModel):
@@ -145,16 +149,21 @@ class GenerationConfig(BaseModel):
     temperature: float = 0.9
 
 
+class WandbConfig(BaseModel):
+    project: str = "golden-gate-bridge-repeng"
+    entity: str = "hongnangao"
+
+
 class Composer(BaseModel):
     """Compose all sub-configurations."""
 
     golden_gate_config: GoldenGateBridgeConfig = Field(
         default_factory=GoldenGateBridgeConfig
     )
-    trippy_config: PsychedelicConfig = Field(default_factory=PsychedelicConfig)
     repeng_config: RepengConfig = Field(default_factory=RepengConfig)
     tokenizer_config: TokenizerConfig = Field(default_factory=TokenizerConfig)
     llama_config: LlamaConfig = Field(default_factory=LlamaConfig)
     generation_config: GenerationConfig = Field(
         default_factory=GenerationConfig
     )
+    wandb_config: WandbConfig = Field(default_factory=WandbConfig)

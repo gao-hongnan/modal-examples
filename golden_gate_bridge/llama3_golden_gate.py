@@ -9,24 +9,31 @@ References
 """
 
 import json
+import os
 from typing import Any
 
 import torch
 from repeng import ControlVector, DatasetEntry
+from rich.pretty import pprint
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    GenerationConfig,
-    GenerationMixin,
     TextStreamer,
-    PretrainedConfig,
 )
-import os
 from transformers.tokenization_utils_base import BatchEncoding
-from rich.pretty import pprint
-from .config import GPU, IMAGE, VOLUME, Composer, Constants, app
 
-PAD_TOKEN_ID = 0
+import wandb
+
+from .config import (
+    ALLOW_WANDB,
+    GPU,
+    IMAGE,
+    VOLUME,
+    Composer,
+    Constants,
+    State,
+    app,
+)
 
 
 def load_tokenizer(model_name: str, **kwargs: Any) -> AutoTokenizer:
@@ -136,7 +143,7 @@ def make_dataset(
 
 
 def chat_template_unparse(messages: list[tuple[str, str]]) -> str:
-    """Unparse chat messages into a single string.
+    r"""Unparse chat messages into a single string.
 
     Parameters
     ----------
@@ -148,6 +155,11 @@ def chat_template_unparse(messages: list[tuple[str, str]]) -> str:
     -------
     str
         Unparsed chat messages as a single string.
+
+    Example
+    -------
+    >>> chat_template_unparse([("user", "What are you?")])
+    '<|start_header_id|>user<|end_header_id|>\n\nWhat are you?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n'
     """
     template = []
 
@@ -163,35 +175,42 @@ def chat_template_unparse(messages: list[tuple[str, str]]) -> str:
 
 def generate_with_vector(
     composer: Composer,
+    state: State,
+    *,
     model: AutoModelForCausalLM,
     tokenizer: AutoTokenizer,
     input: str,
     labeled_vectors: list[tuple[str, ControlVector]],
     show_baseline: bool = False,
-) -> None:
+) -> State:
     input_ids: BatchEncoding[torch.Tensor, torch.Tensor] = tokenizer(
         input, return_tensors="pt"
     ).to("cuda:0")
 
     composer.generation_config.pad_token_id = tokenizer.eos_token_id
 
-    def gen(label: str) -> None:
+    def gen(label: str) -> torch.Tensor:
         print(f"\n{label}")
 
-        _ = model.generate(
+        output = model.generate(
             streamer=TextStreamer(tokenizer),
             **input_ids,
             **composer.generation_config.model_dump(),
         )
+        return output
 
     if show_baseline:
         model.reset()
-        gen("baseline")
+        decoded = tokenizer.decode(gen("baseline").squeeze()).strip()
+        state.answers.append({"baseline": decoded})
 
     for label, vector in labeled_vectors:
         model.set_control(vector)
-        gen(label)
+        decoded = tokenizer.decode(gen(label).squeeze()).strip()
+        state.answers.append({label: decoded})
+
     model.reset()
+    return state
 
 
 @app.function(
@@ -202,9 +221,16 @@ def generate_with_vector(
     volumes={Constants.TARGET_ARTIFACTS_DIR: VOLUME},
 )
 def train_and_apply_control_vector(
-    composer: Composer, *, suffixes: list[str]
-) -> None:
+    composer: Composer, state: State, *, suffixes: list[str], question: str
+) -> State:
     from repeng import ControlModel, ControlVector
+
+    if ALLOW_WANDB:
+        run = wandb.init(
+            project=composer.wandb_config.project,
+            entity=composer.wandb_config.entity,
+        )
+        run.config.update(composer.model_dump())
 
     tokenizer = load_tokenizer(Constants.MODEL_NAME)
     tokenizer.pad_token_id = composer.tokenizer_config.pad_token_id
@@ -216,65 +242,53 @@ def train_and_apply_control_vector(
     model = ControlModel(
         wrapped_model, layer_ids=composer.llama_config.layer_ids
     )
-
-    golden_gate_config = composer.golden_gate_config
+    # state.controlled_model = model
 
     bridge_dataset = make_dataset(
         template=chat_template_unparse([("user", "{persona}")]),
-        positive_personas=golden_gate_config.positive_personas,
-        negative_personas=golden_gate_config.negative_personas,
+        positive_personas=composer.golden_gate_config.positive_personas,
+        negative_personas=composer.golden_gate_config.negative_personas,
         suffix_list=suffixes,
     )
-    pprint(bridge_dataset)
 
     model.reset()
     bridge_vector = ControlVector.train(
         model, tokenizer, bridge_dataset, **composer.repeng_config.model_dump()
     )
+    state.controlled_vector = bridge_vector
 
-    generate_with_vector(
+    pprint(chat_template_unparse([("user", f"{question}")]))
+    state = generate_with_vector(
         composer=composer,
+        state=state,
         model=model,
         tokenizer=tokenizer,
-        input=chat_template_unparse([("user", "What are you?")]),
+        input=chat_template_unparse([("user", f"{question}")]),
         labeled_vectors=[
             ("0.9 * bridge_vector", 0.9 * bridge_vector),
-            ("1.5 * bridge_vector", 1.5 * bridge_vector),
+            ("1.1 * bridge_vector", 1.1 * bridge_vector),
         ],
     )
 
-    # trippy_config = composer.trippy_config
-    # trippy_dataset = make_dataset(
-    #     template=chat_template_unparse([("user", "{persona}")]),
-    #     positive_personas=trippy_config.positive_personas,
-    #     negative_personas=trippy_config.negative_personas,
-    #     suffix_list=suffixes,
-    # )
-    # model.reset()
-    # trippy_vector = ControlVector.train(
-    #     model, tokenizer, trippy_dataset, **composer.repeng_config.model_dump()
-    # )
-    # generate_with_vector(
-    #     model=model,
-    #     tokenizer=tokenizer,
-    #     input=chat_template_unparse([("user", "What are you?")]),
-    #     labeled_vectors=[
-    #         ("0.75 * trippy_vector", 0.75 * trippy_vector),
-    #         (
-    #             "0.25 * trippy_vector + 0.75 * bridge_vector",
-    #             0.25 * trippy_vector + 0.75 * bridge_vector,
-    #         ),
-    #     ],
-    #     repetition_penalty=1.3,
-    #     temperature=1.0,
-    # )
+    for answer in state.answers:
+        run.log(answer)
 
+    if ALLOW_WANDB:
+        run.finish()
+
+    return state
 
 @app.local_entrypoint()
-def main(suffix_filepath: str) -> None:
-    # load file here for local entrypoint execution else need to think of how to mount
+def main(suffix_filepath: str, question: str = "What are you?") -> None:
+    """Main entrypoint for the golden gate bridge."""
     suffixes = load_suffixes(suffix_filepath)
 
     composer = Composer()
     pprint(composer)
-    train_and_apply_control_vector.remote(composer=composer, suffixes=suffixes)
+
+    state = State()
+
+    trained_state = train_and_apply_control_vector.remote(
+        composer=composer, state=state, suffixes=suffixes, question=question
+    )
+    pprint(trained_state)
