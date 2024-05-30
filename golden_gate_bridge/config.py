@@ -45,6 +45,7 @@ class State(BaseModel):
     class Config:
         """`torch.nn.Module` is not a supported serializable type by pydantic
         so we add `arbitrary_types_allowed = True` to allow it."""
+
         arbitrary_types_allowed = True
 
 

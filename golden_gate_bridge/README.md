@@ -23,3 +23,11 @@ and execute the following command:
 export ALLOW_WANDB=true # optional if you want to use Weights and Biases
 modal run golden_gate_bridge.llama3_golden_gate --suffix-filepath=./golden_gate_bridge/data/all_truncated_outputs.json
 ```
+
+## CI Checks
+
+```bash
+ruff check
+ruff format --check
+dmypy run -- golden_gate_bridge
+```

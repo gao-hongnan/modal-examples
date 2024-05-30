@@ -276,6 +276,7 @@ def train_and_apply_control_vector(
 
     return state
 
+
 @app.local_entrypoint()
 def main(suffix_filepath: str, question: str = "What are you?") -> None:
     """Main entrypoint for the golden gate bridge."""
