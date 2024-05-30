@@ -257,7 +257,6 @@ def train_and_apply_control_vector(
     )
     state.controlled_vector = bridge_vector
 
-    pprint(chat_template_unparse([("user", f"{question}")]))
     state = generate_with_vector(
         composer=composer,
         state=state,
@@ -270,10 +269,9 @@ def train_and_apply_control_vector(
         ],
     )
 
-    for answer in state.answers:
-        run.log(answer)
-
     if ALLOW_WANDB:
+        for answer in state.answers:
+            run.log(answer)
         run.finish()
 
     return state
