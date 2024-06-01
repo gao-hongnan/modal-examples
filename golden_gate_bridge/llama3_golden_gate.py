@@ -12,12 +12,11 @@ import os
 from typing import Any
 
 import torch
+import wandb
 from repeng import ControlVector, DatasetEntry
 from rich.pretty import pprint
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
 from transformers.tokenization_utils_base import BatchEncoding
-
-import wandb
 
 from .config import (
     ALLOW_WANDB,
