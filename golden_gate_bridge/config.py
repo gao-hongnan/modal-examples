@@ -1,14 +1,18 @@
 """
 Configuration, State, Constants and Initialization.
 """
+from __future__ import annotations
+
 import os
 from enum import Enum
+from typing import Literal
 
 import modal
 import modal.gpu
 import torch
 from modal import App, Image, Volume
 from pydantic import BaseModel, Field
+from repeng import ControlModel, ControlVector
 
 ALLOW_WANDB = os.environ.get("ALLOW_WANDB", "false").lower() == "true"
 
@@ -22,7 +26,7 @@ class Constants(str, Enum):
     GIT_SHA = "d15085247ccefe38261a12ea70d9c72609bb1081"
     SOURCE_ARTIFACTS_DIR = "artifacts-volume"
     TARGET_ARTIFACTS_DIR = "/artifacts"
-    TIMEOUT = "1800"
+    TIMEOUT = "3600"
     CONTAINER_IDLE_TIMEOUT = "600"
     MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
 
@@ -39,8 +43,8 @@ class State(BaseModel):
     """Base class for state."""
 
     answers: list[dict[str, str]] = Field(default_factory=list)
-    # controlled_model: torch.nn.Module = Field(default=None)
-    controlled_vector: torch.Tensor = Field(default=None)
+    controlled_model: ControlModel = Field(default=None)
+    controlled_vector: ControlVector = Field(default=None)
 
     class Config:
         """`torch.nn.Module` is not a supported serializable type by pydantic
@@ -48,14 +52,42 @@ class State(BaseModel):
 
         arbitrary_types_allowed = True
 
+    def save_snapshots(self, filepath: str) -> None:
+        """Save the state dictionaries of the components to a file."""
+        state = {
+            "controlled_model": self.controlled_model.state_dict()
+            if self.controlled_model
+            else None,
+            "controlled_vector": self.controlled_vector
+            if self.controlled_vector
+            else None,
+            "answers": self.answers,
+        }
+        torch.save(state, filepath)
+
+    @classmethod
+    def load_snapshots(cls, filepath: str) -> State:
+        """Load the state dictionaries of the components from a file."""
+        state = torch.load(filepath)
+        controlled_model = (
+            ControlModel.load_state_dict(state["controlled_model"])
+            if state["controlled_model"]
+            else None
+        )
+        controlled_vector = state["controlled_vector"]
+        answers = state["answers"]
+        return cls(
+            controlled_model=controlled_model,
+            controlled_vector=controlled_vector,
+            answers=answers,
+        )
+
 
 def download_model_weights() -> None:
     """Download model weights from huggingface hub and cache it to `CACHE_DIR`."""
     from huggingface_hub import snapshot_download
 
-    snapshot_download(
-        repo_id=Constants.MODEL_NAME, cache_dir=Constants.CACHE_DIR
-    )
+    snapshot_download(repo_id=Constants.MODEL_NAME, cache_dir=Constants.CACHE_DIR)
 
 
 IMAGE = (
@@ -81,17 +113,13 @@ app = App(
     image=IMAGE,
     secrets=[
         modal.Secret.from_name("huggingface"),
-        modal.Secret.from_dict(
-            {"ALLOW_WANDB": os.environ.get("ALLOW_WANDB", "false")}
-        ),
+        modal.Secret.from_dict({"ALLOW_WANDB": os.environ.get("ALLOW_WANDB", "false")}),
         *([modal.Secret.from_name("wandb")] if ALLOW_WANDB else []),
     ],
 )
 
-VOLUME = Volume.from_name(
-    label=Constants.SOURCE_ARTIFACTS_DIR, create_if_missing=True
-)
-GPU = modal.gpu.A100(size="40GB", count=3)
+VOLUME = Volume.from_name(label=Constants.SOURCE_ARTIFACTS_DIR, create_if_missing=True)
+GPU = modal.gpu.H100(count=2)
 
 
 class DatasetConfig(BaseModel):
@@ -113,9 +141,7 @@ class DatasetConfig(BaseModel):
 class GoldenGateBridgeConfig(DatasetConfig):
     """Dataset configuration for Golden Gate Bridge."""
 
-    positive_personas: list[str] = [
-        "Please act as if you are the golden gate bridge"
-    ]
+    positive_personas: list[str] = ["Please act as if you are the golden gate bridge"]
     negative_personas: list[str] = [""]
 
 
@@ -123,7 +149,7 @@ class RepengConfig(BaseModel):
     """Base class for repeng configuration."""
 
     batch_size: int = 32
-    method: str = "pca_center"
+    method: Literal["pca_diff", "pca_center", "umap"] = "pca_center"
 
 
 class TokenizerConfig(BaseModel):
@@ -149,6 +175,12 @@ class GenerationConfig(BaseModel):
     temperature: float = 1.0
 
 
+class Common(BaseModel):
+    """Common configuration across the training regime."""
+
+    save_to: str = "controlled_golden_gate_bridge_repeng.pt"
+
+
 class WandbConfig(BaseModel):
     """Base class for wandb configuration."""
 
@@ -165,7 +197,6 @@ class Composer(BaseModel):
     repeng_config: RepengConfig = Field(default_factory=RepengConfig)
     tokenizer_config: TokenizerConfig = Field(default_factory=TokenizerConfig)
     llama_config: LlamaConfig = Field(default_factory=LlamaConfig)
-    generation_config: GenerationConfig = Field(
-        default_factory=GenerationConfig
-    )
+    generation_config: GenerationConfig = Field(default_factory=GenerationConfig)
     wandb_config: WandbConfig = Field(default_factory=WandbConfig)
+    common: Common = Field(default_factory=Common)

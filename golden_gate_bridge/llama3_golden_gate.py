@@ -13,11 +13,18 @@ from typing import Any
 
 import torch
 import wandb
-from repeng import ControlVector, DatasetEntry
+from repeng import ControlModel, ControlVector, DatasetEntry
 from rich.pretty import pprint
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+    PreTrainedTokenizerFast,
+    TextStreamer,
+)
 from transformers.tokenization_utils_base import BatchEncoding
-from transformers import PreTrainedModel, PreTrainedTokenizerBase
+from pathlib import Path
 
 from .config import (
     ALLOW_WANDB,
@@ -31,7 +38,7 @@ from .config import (
 )
 
 
-def load_tokenizer(model_name: str, **kwargs: Any) -> PreTrainedTokenizerBase:
+def load_tokenizer(model_name: str, **kwargs: Any) -> PreTrainedTokenizerBase | PreTrainedTokenizerFast:
     """Load tokenizer from huggingface.
 
     Parameters
@@ -43,14 +50,12 @@ def load_tokenizer(model_name: str, **kwargs: Any) -> PreTrainedTokenizerBase:
 
     Returns
     -------
-    PreTrainedTokenizerBase
+    PreTrainedTokenizerBase | PreTrainedTokenizerFast
         Tokenizer loaded from huggingface.
     """
 
     cache_dir = kwargs.pop("cache_dir", Constants.CACHE_DIR)
-    return AutoTokenizer.from_pretrained(
-        model_name, cache_dir=cache_dir, **kwargs
-    )
+    return AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir, **kwargs)
 
 
 def load_model(model_name: str, **kwargs: Any) -> PreTrainedModel:
@@ -172,14 +177,13 @@ def generate(
     composer: Composer,
     state: State,
     *,
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizerBase,
+    model: ControlModel,
+    tokenizer: PreTrainedTokenizerBase | PreTrainedTokenizerFast,
     input: str,
     labeled_vectors: list[tuple[str, ControlVector]],
     show_baseline: bool = False,
 ) -> State:
-    assert issubclass(type(tokenizer), PreTrainedTokenizerBase)
-    assert issubclass(type(model), PreTrainedModel)
+
 
     # inference on master gpu
     input_ids: BatchEncoding[torch.Tensor, torch.Tensor] = tokenizer(
@@ -232,29 +236,33 @@ def train_control_vector(
         run.config.update(composer.model_dump())
 
     tokenizer = load_tokenizer(Constants.MODEL_NAME)
-    print(type(tokenizer))
     tokenizer.pad_token_id = composer.tokenizer_config.pad_token_id
+    truncated_output_suffixes = [
+        tokenizer.convert_tokens_to_string(tokens[:i])
+        for tokens in (tokenizer.tokenize(suffix) for suffix in suffixes)
+        for i in range(1, len(tokens))
+    ]
 
     model = load_model(
         Constants.MODEL_NAME, device_map=composer.llama_config.device_map
     )
-    print(type(model))
     wrapped_model = model
-    model = ControlModel(
-        wrapped_model, layer_ids=composer.llama_config.layer_ids
-    )
+    model = ControlModel(wrapped_model, layer_ids=composer.llama_config.layer_ids)
+    # save the state
+    state.controlled_model = model
 
     bridge_dataset = make_dataset(
         template=chat_template_unparse([("user", "{persona}")]),
         positive_personas=composer.golden_gate_config.positive_personas,
         negative_personas=composer.golden_gate_config.negative_personas,
-        suffixes=suffixes,
+        suffixes=truncated_output_suffixes,
     )
 
     model.reset()
     bridge_vector = ControlVector.train(
         model, tokenizer, bridge_dataset, **composer.repeng_config.model_dump()
     )
+    # state is mutable
     state.controlled_vector = bridge_vector
 
     state = generate(
@@ -264,6 +272,7 @@ def train_control_vector(
         tokenizer=tokenizer,
         input=chat_template_unparse([("user", f"{question}")]),
         labeled_vectors=[
+            ("0.7 * bridge_vector", 0.7 * bridge_vector),
             ("0.9 * bridge_vector", 0.9 * bridge_vector),
             ("1.1 * bridge_vector", 1.1 * bridge_vector),
         ],
@@ -274,6 +283,10 @@ def train_control_vector(
             run.log(answer)
         run.finish()
 
+    save_dir = Path(f"{str(Constants.TARGET_ARTIFACTS_DIR)}") / f"{Constants.APP_NAME}"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    state.save_snapshots(filepath=f"{save_dir}/{composer.common.save_to}")
+    VOLUME.commit()
     return state
 
 
