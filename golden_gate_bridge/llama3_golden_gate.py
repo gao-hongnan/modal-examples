@@ -17,6 +17,7 @@ from repeng import ControlVector, DatasetEntry
 from rich.pretty import pprint
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
 from transformers.tokenization_utils_base import BatchEncoding
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 from .config import (
     ALLOW_WANDB,
@@ -30,7 +31,7 @@ from .config import (
 )
 
 
-def load_tokenizer(model_name: str, **kwargs: Any) -> AutoTokenizer:
+def load_tokenizer(model_name: str, **kwargs: Any) -> PreTrainedTokenizerBase:
     """Load tokenizer from huggingface.
 
     Parameters
@@ -42,7 +43,7 @@ def load_tokenizer(model_name: str, **kwargs: Any) -> AutoTokenizer:
 
     Returns
     -------
-    AutoTokenizer
+    PreTrainedTokenizerBase
         Tokenizer loaded from huggingface.
     """
 
@@ -52,7 +53,7 @@ def load_tokenizer(model_name: str, **kwargs: Any) -> AutoTokenizer:
     )
 
 
-def load_model(model_name: str, **kwargs: Any) -> AutoModelForCausalLM:
+def load_model(model_name: str, **kwargs: Any) -> PreTrainedModel:
     """Load model from huggingface.
 
     Parameters
@@ -64,7 +65,7 @@ def load_model(model_name: str, **kwargs: Any) -> AutoModelForCausalLM:
 
     Returns
     -------
-    AutoModelForCausalLM
+    PreTrainedModel
         Decoder for Causal Modeling loaded from huggingface.
     """
     torch_dtype = kwargs.pop("torch_dtype", torch.float16)
@@ -99,7 +100,7 @@ def make_dataset(
     template: str,
     positive_personas: list[str],
     negative_personas: list[str],
-    suffix_list: list[str],
+    suffixes: list[str],
 ) -> list[DatasetEntry]:
     """Make dataset from template and personas.
 
@@ -111,7 +112,7 @@ def make_dataset(
         List of positive personas.
     negative_personas : list[str]
         List of negative personas.
-    suffix_list : list[str]
+    suffixes : list[str]
         List of suffixes to append to the template.
 
     Returns
@@ -121,7 +122,7 @@ def make_dataset(
         from `repeng`.
     """
     dataset = []
-    for suffix in suffix_list:
+    for suffix in suffixes:
         for positive_persona, negative_persona in zip(
             positive_personas, negative_personas
         ):
@@ -167,16 +168,20 @@ def chat_template_unparse(messages: list[tuple[str, str]]) -> str:
     return "".join(template)
 
 
-def generate_with_vector(
+def generate(
     composer: Composer,
     state: State,
     *,
-    model: AutoModelForCausalLM,
-    tokenizer: AutoTokenizer,
+    model: PreTrainedModel,
+    tokenizer: PreTrainedTokenizerBase,
     input: str,
     labeled_vectors: list[tuple[str, ControlVector]],
     show_baseline: bool = False,
 ) -> State:
+    assert issubclass(type(tokenizer), PreTrainedTokenizerBase)
+    assert issubclass(type(model), PreTrainedModel)
+
+    # inference on master gpu
     input_ids: BatchEncoding[torch.Tensor, torch.Tensor] = tokenizer(
         input, return_tensors="pt"
     ).to("cuda:0")
@@ -214,7 +219,7 @@ def generate_with_vector(
     container_idle_timeout=int(Constants.CONTAINER_IDLE_TIMEOUT),
     volumes={Constants.TARGET_ARTIFACTS_DIR: VOLUME},
 )
-def train_and_apply_control_vector(
+def train_control_vector(
     composer: Composer, state: State, *, suffixes: list[str], question: str
 ) -> State:
     from repeng import ControlModel, ControlVector
@@ -227,11 +232,13 @@ def train_and_apply_control_vector(
         run.config.update(composer.model_dump())
 
     tokenizer = load_tokenizer(Constants.MODEL_NAME)
+    print(type(tokenizer))
     tokenizer.pad_token_id = composer.tokenizer_config.pad_token_id
 
     model = load_model(
         Constants.MODEL_NAME, device_map=composer.llama_config.device_map
     )
+    print(type(model))
     wrapped_model = model
     model = ControlModel(
         wrapped_model, layer_ids=composer.llama_config.layer_ids
@@ -241,7 +248,7 @@ def train_and_apply_control_vector(
         template=chat_template_unparse([("user", "{persona}")]),
         positive_personas=composer.golden_gate_config.positive_personas,
         negative_personas=composer.golden_gate_config.negative_personas,
-        suffix_list=suffixes,
+        suffixes=suffixes,
     )
 
     model.reset()
@@ -250,7 +257,7 @@ def train_and_apply_control_vector(
     )
     state.controlled_vector = bridge_vector
 
-    state = generate_with_vector(
+    state = generate(
         composer=composer,
         state=state,
         model=model,
@@ -288,7 +295,7 @@ def main(suffix_filepath: str, question: str = "What are you?") -> None:
 
     state = State()
 
-    trained_state: State = train_and_apply_control_vector.remote(
+    trained_state: State = train_control_vector.remote(
         composer=composer, state=state, suffixes=suffixes, question=question
     )
     pprint(trained_state.answers)

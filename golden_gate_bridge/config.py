@@ -59,7 +59,7 @@ def download_model_weights() -> None:
 
 
 IMAGE = (
-    Image.debian_slim(python_version="3.10")
+    Image.debian_slim(python_version="3.11")
     .apt_install("git")
     .pip_install(
         # "repeng" fetched from source since latest changes not published to pypi
@@ -91,7 +91,7 @@ app = App(
 VOLUME = Volume.from_name(
     label=Constants.SOURCE_ARTIFACTS_DIR, create_if_missing=True
 )
-GPU = modal.gpu.H100(count=2)
+GPU = modal.gpu.A100(size="40GB", count=3)
 
 
 class DatasetConfig(BaseModel):
