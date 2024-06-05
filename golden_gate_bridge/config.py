@@ -6,7 +6,6 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any, Literal
 
 import modal
@@ -55,6 +54,7 @@ IMAGE = (
         "wandb==0.16.3",
         "rich==13.7.1",
         "pydantic~=2.0.0",
+        "fastapi==0.108.0",  # compatible w pydantic 2.x, see https://github.com/Sanster/IOPaint/issues/512
     )
     .run_function(
         download_model_weights,
@@ -143,9 +143,13 @@ class Common(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         """Post initialization for the model."""
-        self.save_directory = (
-            f"{Constants.TARGET_ARTIFACTS_DIR}/{Constants.APP_NAME}/{self.identifier}"
-        )
+        self.save_directory = f"{Constants.TARGET_ARTIFACTS_DIR}/{Constants.APP_NAME}"
+
+
+class ServingConfig(BaseModel):
+    """Base class for serving configuration."""
+
+    strength: float = 0.9
 
 
 class WandbConfig(BaseModel):

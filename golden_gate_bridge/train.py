@@ -221,7 +221,9 @@ def train_control_vector(
     from repeng import ControlModel, ControlVector
 
     # Create save directory
-    Path(composer.common.save_directory).mkdir(parents=True, exist_ok=True)
+    Path(f"{composer.common.save_directory}/{composer.common.identifier}").mkdir(
+        parents=True, exist_ok=True
+    )
 
     if ALLOW_WANDB:
         run = wandb.init(

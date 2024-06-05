@@ -9,8 +9,8 @@ class State(BaseModel):
     """Base class for state."""
 
     answers: list[dict[str, str]] = Field(default_factory=list)
-    controlled_model: ControlModel = Field(default=None)
-    controlled_vector: ControlVector = Field(default=None)
+    controlled_model: ControlModel | None = Field(default=None)
+    controlled_vector: ControlVector | None = Field(default=None)
 
     class Config:
         """`torch.nn.Module` is not a supported serializable type by pydantic
@@ -40,7 +40,9 @@ class State(BaseModel):
             if state["controlled_model"]
             else None
         )
-        controlled_vector = state["controlled_vector"]
+        controlled_vector = (
+            state["controlled_vector"] if state["controlled_vector"] else None
+        )
         answers = state["answers"]
         return cls(
             controlled_model=controlled_model,

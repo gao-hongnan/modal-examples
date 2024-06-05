@@ -52,6 +52,36 @@ dmypy run -- golden_gate_bridge
 
 ## Volume
 
+To view your artifacts, you can use the following command:
+
 ```bash
 modal volume ls artifacts-volume /golden-gate-bridge-repeng
 ```
+
+This will show you the contents of the volume:
+
+| filename                                                          | type | created/modified     | size      |
+| ----------------------------------------------------------------- | ---- | -------------------- | --------- |
+| golden-gate-bridge-repeng/20240605160831                          | dir  | 2024-06-05 16:12 +08 | 80 B      |
+| golden-gate-bridge-repeng/controlled_golden_gate_bridge_repeng.pt | file | 2024-06-04 19:50 +08 | 131.4 GiB |
+
+And we can further check the contents of the directory `golden-gate-bridge-repeng/20240605160831` if we run the following command:
+
+```bash
+modal volume ls artifacts-volume golden-gate-bridge-repeng/20240605160831
+```
+
+| filename                                                                           | type | created/modified     | size    |
+| ---------------------------------------------------------------------------------- | ---- | -------------------- | ------- |
+| golden-gate-bridge-repeng/20240605160831/controlled_golden_gate_bridge_repeng.pt   | file | 2024-06-05 16:12 +08 | 3.7 MiB |
+| golden-gate-bridge-repeng/20240605160831/controlled_golden_gate_bridge_repeng.gguf | file | 2024-06-05 16:12 +08 | 2.5 MiB |
+
+## References And Further Readings
+
+First, a special thanks to the Modal team for their prompt support and guidance
+in the slack channel. A shoutout to Charles Frye for his assistance in helping
+me get started with Modal. His enthusiasm is through the roof lol.
+
+- [Serverless Deployment of Mistral 7B with Modal Labs and HuggingFace](https://blog.premai.io/serverless-deployment-using-huggingface-and-modal/)
+- [Pet Art Dreambooth with Hugging Face and Gradio](https://modal.com/docs/examples/dreambooth_app)
+- [Repeng](https://github.com/vgel/repeng/blob/main/repeng/)
