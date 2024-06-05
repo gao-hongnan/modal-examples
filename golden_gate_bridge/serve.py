@@ -73,7 +73,7 @@ class Model:
         )
 
     @modal.method()
-    def inference(self, model_input: ModelInput) -> State:
+    def inference(self, model_input: ModelInput) -> list[dict[str, str]]:
         wrapped_model = self.model
         model = ControlModel(
             wrapped_model, layer_ids=self.composer.llama_config.layer_ids
@@ -97,7 +97,7 @@ class Model:
                 for coef in self.composer.generation_config.coefficients
             ],
         )
-        return state
+        return state.answers
 
 
 @web_app.get("/")
@@ -108,7 +108,7 @@ async def root() -> dict[str, str]:
 @web_app.post("/api/v1/generate")
 async def generate_output(
     model_input: ModelInput, identifier: Optional[str] = Header(None)
-) -> State:
+) -> list[dict[str, str]]:
     identifier = identifier or IDENTIFIER
     model = Model()
     return model.inference.remote(model_input)  # type: ignore[no-any-return]
