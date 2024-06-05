@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from typing import Type
+
 import torch
 from pydantic import BaseModel, Field
 from repeng import ControlModel, ControlVector
+
+from .config import Composer
 
 
 class State(BaseModel):
@@ -10,13 +14,9 @@ class State(BaseModel):
 
     answers: list[dict[str, str]] = Field(default_factory=list)
     controlled_model: ControlModel | None = Field(default=None)
-    controlled_vector: ControlVector | None = Field(default=None)
+    controlled_vector: ControlVector = Field(default=None)
 
-    class Config:
-        """`torch.nn.Module` is not a supported serializable type by pydantic
-        so we add `arbitrary_types_allowed = True` to allow it."""
-
-        arbitrary_types_allowed = True
+    composer: Composer | None = Field(default=None)
 
     def save_snapshots(self, filepath: str) -> None:
         """Save the state dictionaries of the components to a file."""
@@ -28,11 +28,12 @@ class State(BaseModel):
             if self.controlled_vector
             else None,
             "answers": self.answers,
+            "composer": self.composer.model_dump() if self.composer else None,
         }
         torch.save(state, filepath)
 
     @classmethod
-    def load_snapshots(cls, filepath: str) -> State:
+    def load_snapshots(cls: Type[State], filepath: str) -> State:
         """Load the state dictionaries of the components from a file."""
         state = torch.load(filepath)
         controlled_model = (
@@ -44,8 +45,28 @@ class State(BaseModel):
             state["controlled_vector"] if state["controlled_vector"] else None
         )
         answers = state["answers"]
+        composer = Composer(**state["composer"]) if state["composer"] else None
         return cls(
             controlled_model=controlled_model,
             controlled_vector=controlled_vector,
             answers=answers,
+            composer=composer,
         )
+
+    class Config:
+        """`torch.nn.Module` is not a supported serializable type by pydantic
+        so we add `arbitrary_types_allowed = True` to allow it."""
+
+        arbitrary_types_allowed = True
+        use_enum_values = True
+
+
+class ModelOutput(BaseModel):
+    """Base class for model output. No good way to pass selected fields to fastapi
+    endpoint for now, so duplicate some fields here.
+
+    See https://stackoverflow.com/questions/78527525/allow-only-certain-fields-of-pydantic-model-to-be-passed-to-fastapi-endpoint
+    """
+
+    answers: list[dict[str, str]] = Field(default_factory=list)
+    composer: Composer | None = Field(default=None)

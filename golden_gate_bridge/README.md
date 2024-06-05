@@ -34,6 +34,18 @@ To serve the model, we execute the following command:
 modal serve golden_gate_bridge.serve
 ```
 
+And we can test the model by running the following command:
+
+```bash
+curl -X 'POST' \
+  'https://gao-hongnan--golden-gate-bridge-repeng-web-dev.modal.run/api/v1/generate' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "text": "What are you?"
+}'
+```
+
 ## Deploy
 
 To deploy the model, we execute the following command:

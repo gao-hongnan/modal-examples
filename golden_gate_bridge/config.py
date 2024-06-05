@@ -6,12 +6,12 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, Type
 
 import modal
 import modal.gpu
 from modal import App, Image, Volume
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ALLOW_WANDB = os.environ.get("ALLOW_WANDB", "false").lower() == "true"
 
@@ -22,7 +22,9 @@ class Constants(str, Enum):
     MODAL_VERSION = "0.62.181"
     APP_NAME = "golden-gate-bridge-repeng"
     CACHE_DIR = "/root/.cache/huggingface"
-    GIT_SHA = "d15085247ccefe38261a12ea70d9c72609bb1081"
+    GIT_SHA = (
+        "d15085247ccefe38261a12ea70d9c72609bb1081"  # repeng's git sha, not our app
+    )
     SOURCE_ARTIFACTS_DIR = "artifacts-volume"
     TARGET_ARTIFACTS_DIR = "/artifacts"
     TIMEOUT = "3600"
@@ -125,21 +127,27 @@ class GenerationConfig(BaseModel):
     """Base class for generation configuration. Not to be confused with
     `GenerationConfig` from `transformers` library."""
 
+    # hf config
     pad_token_id: int = Field(default=None)
     max_new_tokens: int = 256
     repetition_penalty: float = 1.25
-    temperature: float = 1.0
+    temperature: float = 0.7
+
+    # custom config
+    show_baseline: bool = False
+    device: str = "cuda:0"
+    coefficients: list[float] = Field(default_factory=lambda: [0.9, 1.1])
 
 
-class Common(BaseModel):
-    """Common configuration across the training regime."""
+class Registry(BaseModel):
+    """Store/Registry configuration across the training regime."""
 
-    save_filename: str = "controlled_golden_gate_bridge_repeng.pt"
-    gguf_filename: str = "controlled_golden_gate_bridge_repeng.gguf"
-    save_directory: str = Field(default=None)  # Initialize as post init
     identifier: str = Field(
         default_factory=lambda: datetime.now().strftime("%Y%m%d%H%M%S")
     )
+    save_filename: str = "controlled_golden_gate_bridge_repeng.pt"
+    gguf_filename: str = "controlled_golden_gate_bridge_repeng.gguf"
+    save_directory: str = Field(default=None)  # Initialize as post init
 
     def model_post_init(self, __context: Any) -> None:
         """Post initialization for the model."""
@@ -170,10 +178,16 @@ class Composer(BaseModel):
     llama_config: LlamaConfig = Field(default_factory=LlamaConfig)
     generation_config: GenerationConfig = Field(default_factory=GenerationConfig)
     wandb_config: WandbConfig = Field(default_factory=WandbConfig)
-    common: Common = Field(default_factory=Common)
+    registry: Registry = Field(default_factory=Registry)
+    # constants: Type[Constants] = Constants
 
     def pretty_print(self) -> None:
         """Pretty print the configuration."""
         from rich.pretty import pprint
 
         pprint(self)
+
+    class Config:
+        """Pydantic configuration."""
+
+        use_enum_values = True

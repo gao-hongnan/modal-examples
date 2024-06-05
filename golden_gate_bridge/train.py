@@ -7,165 +7,28 @@ References
 -    Source Repository: [repeng](https://github.com/vgel/repeng/tree/main) authored by [Theia](https://vgel.me/).
 """
 
-import json
-import os
 from pathlib import Path
-from typing import Any
 
 import torch
 import wandb
-from repeng import ControlModel, ControlVector, DatasetEntry
+from repeng import ControlModel, ControlVector
 from rich.pretty import pprint
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-    TextStreamer,
-)
+from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast, TextStreamer
 from transformers.generation.utils import GenerateOutput
 from transformers.tokenization_utils_base import BatchEncoding
 
 from .config import ALLOW_WANDB, GPU, IMAGE, VOLUME, Composer, Constants, app
-from .state import State
+from .logger import get_logger
+from .state import ModelOutput, State
+from .utils import (
+    chat_template_unparse,
+    load_model,
+    load_suffixes,
+    load_tokenizer,
+    make_dataset,
+)
 
-
-def load_tokenizer(
-    model_name: str, **kwargs: Any
-) -> PreTrainedTokenizerBase | PreTrainedTokenizerFast:
-    """Load tokenizer from huggingface.
-
-    Parameters
-    ----------
-    model_name : str
-        Model name to load from huggingface.
-    kwargs : Any
-        Additional keyword arguments to pass to the tokenizer.
-
-    Returns
-    -------
-    PreTrainedTokenizerBase | PreTrainedTokenizerFast
-        Tokenizer loaded from huggingface.
-    """
-
-    cache_dir = kwargs.pop("cache_dir", Constants.CACHE_DIR)
-    return AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir, **kwargs)
-
-
-def load_model(model_name: str, **kwargs: Any) -> PreTrainedModel:
-    """Load model from huggingface.
-
-    Parameters
-    ----------
-    model_name : str
-        Model name to load from huggingface.
-    kwargs : Any
-        Additional keyword arguments to pass to the model.
-
-    Returns
-    -------
-    PreTrainedModel
-        Decoder for Causal Modeling loaded from huggingface.
-    """
-    torch_dtype = kwargs.pop("torch_dtype", torch.float16)
-    cache_dir = kwargs.pop("cache_dir", Constants.CACHE_DIR)
-
-    return AutoModelForCausalLM.from_pretrained(
-        model_name,
-        cache_dir=cache_dir,
-        torch_dtype=torch_dtype,
-        **kwargs,
-    )
-
-
-def load_suffixes(suffix_filepath: str | os.PathLike[str]) -> list[str]:
-    """Load suffixes from file.
-
-    Parameters
-    ----------
-    suffix_filepath : str | os.PathLike
-        File path to load suffixes from.
-
-    Returns
-    -------
-    list[str]
-        List of suffixes to pass into the dataset template.
-    """
-    with open(suffix_filepath, "r", encoding="utf-8") as f:
-        return json.load(f) # type: ignore[no-any-return]
-
-
-def make_dataset(
-    template: str,
-    positive_personas: list[str],
-    negative_personas: list[str],
-    suffixes: list[str],
-) -> list[DatasetEntry]:
-    """Make dataset from template and personas.
-
-    Parameters
-    ----------
-    template : str
-        Template to use for dataset.
-    positive_personas : list[str]
-        List of positive personas.
-    negative_personas : list[str]
-        List of negative personas.
-    suffixes : list[str]
-        List of suffixes to append to the template.
-
-    Returns
-    -------
-    list[DatasetEntry]
-        List of dataset entries of the form (positive, negative) as a dataclass
-        from `repeng`.
-    """
-    dataset = []
-    for suffix in suffixes:
-        for positive_persona, negative_persona in zip(
-            positive_personas, negative_personas
-        ):
-            positive_template = template.format(persona=positive_persona)
-            negative_template = template.format(persona=negative_persona)
-            dataset.append(
-                DatasetEntry(
-                    positive=f"{positive_template}{suffix}",
-                    negative=f"{negative_template}{suffix}",
-                )
-            )
-    return dataset
-
-
-def chat_template_unparse(messages: list[tuple[str, str]]) -> str:
-    r"""Unparse chat messages into a single string.
-
-    Parameters
-    ----------
-    messages : list[tuple[str, str]]
-        List of tuples of the form (role, content) where role is the user
-        and content is the message.
-
-    Returns
-    -------
-    str
-        Unparsed chat messages as a single string.
-
-    Example
-    -------
-    >>> chat_template_unparse([("user", "What are you?")])
-    '<|start_header_id|>user<|end_header_id|>\n\nWhat are you?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n'
-    """
-    template = []
-
-    for role, content in messages:
-        template.append(
-            f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
-        )
-    if messages[-1][0] != "assistant":
-        # prefill assistant prefix
-        template.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
-    return "".join(template)
+logger = get_logger(__name__)
 
 
 def generate(
@@ -176,26 +39,29 @@ def generate(
     tokenizer: PreTrainedTokenizerBase | PreTrainedTokenizerFast,
     input: str,
     labeled_vectors: list[tuple[str, ControlVector]],
-    show_baseline: bool = False,
-) -> State:
+) -> State:  # return gen config and model output not state
+    """Generate responses for the given input using the control model."""
     # inference on master gpu
     input_ids: BatchEncoding[torch.Tensor, torch.Tensor] = tokenizer(
         input, return_tensors="pt"
-    ).to("cuda:0")
+    ).to(composer.generation_config.device)
 
     composer.generation_config.pad_token_id = tokenizer.eos_token_id
 
     def gen(label: str) -> GenerateOutput | torch.LongTensor:
-        print(f"\n{label}")
+        logger.info(f"Generating for label: {label}")
 
         output = model.generate(
             streamer=TextStreamer(tokenizer),
             **input_ids,
-            **composer.generation_config.model_dump(),
+            pad_token_id=composer.generation_config.pad_token_id,
+            max_new_tokens=composer.generation_config.max_new_tokens,
+            repetition_penalty=composer.generation_config.repetition_penalty,
+            temperature=composer.generation_config.temperature,
         )
         return output
 
-    if show_baseline:
+    if composer.generation_config.show_baseline:
         model.reset()
         decoded = tokenizer.decode(gen("baseline").squeeze()).strip()
         state.answers.append({"baseline": decoded})
@@ -217,12 +83,13 @@ def generate(
     volumes={Constants.TARGET_ARTIFACTS_DIR: VOLUME},
 )
 def train_control_vector(
-    composer: Composer, state: State, *, suffixes: list[str], question: str
+    composer: Composer, state: State, *, suffixes: list[str], query: str
 ) -> State:
+    """Train the control vector, and generate responses."""
     from repeng import ControlModel, ControlVector
 
     # Create save directory
-    Path(f"{composer.common.save_directory}/{composer.common.identifier}").mkdir(
+    Path(f"{composer.registry.save_directory}/{composer.registry.identifier}").mkdir(
         parents=True, exist_ok=True
     )
 
@@ -268,11 +135,10 @@ def train_control_vector(
         state=state,
         model=model,
         tokenizer=tokenizer,
-        input=chat_template_unparse([("user", f"{question}")]),
+        input=chat_template_unparse([("user", f"{query}")]),
         labeled_vectors=[
-            # ("0.7 * bridge_vector", 0.7 * bridge_vector),
-            ("0.9 * bridge_vector", 0.9 * bridge_vector),
-            # ("1.1 * bridge_vector", 1.1 * bridge_vector),
+            (f"{coef} * bridge_vector", coef * bridge_vector)
+            for coef in composer.generation_config.coefficients
         ],
     )
 
@@ -282,41 +148,25 @@ def train_control_vector(
         run.finish()
 
     state.save_snapshots(
-        filepath=f"{composer.common.save_directory}/{composer.common.save_filename}"
+        filepath=f"{composer.registry.save_directory}/{composer.registry.save_filename}"
     )
     # NOTE: save `controlled_vector` as a `.pt` and `.gguf` file
     state.controlled_vector.export_gguf(
-        path=f"{composer.common.save_directory}/{composer.common.gguf_filename}"
+        path=f"{composer.registry.save_directory}/{composer.registry.gguf_filename}"
     )
     VOLUME.commit()
-
-    _load_saved_control_vector = ControlVector.import_gguf(
-        path=f"{composer.common.save_directory}/{composer.common.gguf_filename}"
-    )
-    generate(
-        composer=composer,
-        state=state,
-        model=model,
-        tokenizer=tokenizer,
-        input=chat_template_unparse([("user", f"{question}")]),
-        labeled_vectors=[
-            # ("0.7 * bridge_vector", 0.7 * bridge_vector),
-            ("0.9 * bridge_vector", 0.9 * _load_saved_control_vector),
-            # ("1.1 * bridge_vector", 1.1 * bridge_vector),
-        ],
-    )
     return state
 
 
 @app.local_entrypoint()
-def main(suffix_filepath: str, question: str = "What are you?") -> None:
+def main(suffix_filepath: str, query: str = "What are you?") -> None:
     """Main entrypoint for the golden gate bridge.
 
     Parameters
     ----------
     suffix_filepath : str
         File path to load suffixes from.
-    question : str, optional
+    query : str, optional
         Question to ask the model, by default "What are you?".
     """
     suffixes = load_suffixes(suffix_filepath)
@@ -327,6 +177,6 @@ def main(suffix_filepath: str, question: str = "What are you?") -> None:
     state = State()
 
     trained_state: State = train_control_vector.remote(
-        composer=composer, state=state, suffixes=suffixes, question=question
+        composer=composer, state=state, suffixes=suffixes, query=query
     )
     pprint(trained_state.answers)
