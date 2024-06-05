@@ -1,4 +1,4 @@
-"""LLAMA3 Golden Gate Bridge.
+"""Llama-3-70B Golden Gate Bridge.
 
 Parts of the code have been adapted and refactored from the `repeng` project.
 
@@ -24,6 +24,7 @@ from transformers import (
     PreTrainedTokenizerFast,
     TextStreamer,
 )
+from transformers.generation.utils import GenerateOutput
 from transformers.tokenization_utils_base import BatchEncoding
 
 from .config import ALLOW_WANDB, GPU, IMAGE, VOLUME, Composer, Constants, app
@@ -78,7 +79,7 @@ def load_model(model_name: str, **kwargs: Any) -> PreTrainedModel:
     )
 
 
-def load_suffixes(suffix_filepath: str | os.PathLike) -> list[str]:
+def load_suffixes(suffix_filepath: str | os.PathLike[str]) -> list[str]:
     """Load suffixes from file.
 
     Parameters
@@ -92,7 +93,7 @@ def load_suffixes(suffix_filepath: str | os.PathLike) -> list[str]:
         List of suffixes to pass into the dataset template.
     """
     with open(suffix_filepath, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return json.load(f) # type: ignore[no-any-return]
 
 
 def make_dataset(
@@ -184,7 +185,7 @@ def generate(
 
     composer.generation_config.pad_token_id = tokenizer.eos_token_id
 
-    def gen(label: str) -> torch.Tensor:
+    def gen(label: str) -> GenerateOutput | torch.LongTensor:
         print(f"\n{label}")
 
         output = model.generate(
@@ -230,6 +231,7 @@ def train_control_vector(
             project=composer.wandb_config.project,
             entity=composer.wandb_config.entity,
         )
+        print(type(run))
         run.config.update(composer.model_dump())
 
     tokenizer = load_tokenizer(Constants.MODEL_NAME)

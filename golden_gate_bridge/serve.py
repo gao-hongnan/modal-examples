@@ -86,7 +86,7 @@ class Model:
 @web_app.post("/api/v1/generate")
 async def handle_generation(
     input: ModelInput, identifier: Optional[str] = Header(None)
-):
+) -> State:
     r"""
     Classify a body of text as spam or ham.
 
@@ -106,7 +106,7 @@ async def handle_generation(
 
 @app.function()
 @modal.asgi_app()
-def web():
+def web() -> FastAPI:
     return web_app
 
 
