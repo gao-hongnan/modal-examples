@@ -34,24 +34,32 @@ To serve the model, we execute the following command:
 modal serve golden_gate_bridge.serve
 ```
 
-And we can test the model by running the following command:
-
-```bash
-curl -X 'POST' \
-  'https://gao-hongnan--golden-gate-bridge-repeng-web-dev.modal.run/api/v1/generate' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "text": "What are you?"
-}'
-```
-
 ## Deploy
 
-To deploy the model, we execute the following command:
+To deploy/re-deploy the model, we execute the following command:
 
 ```bash
 modal deploy golden_gate_bridge.serve
+```
+
+And we can query the api by running the following sample command:
+
+```bash
+curl -X 'POST' \
+  'https://gao-hongnan--golden-gate-bridge-repeng-web.modal.run/api/v1/generate' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "question": "What are you?",
+  "max_new_tokens": 256,
+  "repetition_penalty": 1.25,
+  "temperature": 0.7,
+  "show_baseline": false,
+  "coefficients": [
+    0.9,
+    1.1
+  ]
+}'
 ```
 
 ## CI Checks
