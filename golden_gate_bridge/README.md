@@ -17,11 +17,29 @@ pip install modal
 python3 -m modal setup
 ```
 
-and execute the following command:
+## Train
+
+To train the control vector, we execute the following command:
 
 ```bash
 export ALLOW_WANDB=true # optional if you want to use Weights and Biases
-modal run --detach golden_gate_bridge.llama3_golden_gate --suffix-filepath=./golden_gate_bridge/data/all_truncated_outputs.json
+modal run --detach golden_gate_bridge.train --suffix-filepath=./golden_gate_bridge/data/all_truncated_outputs.json
+```
+
+## Serve
+
+To serve the model, we execute the following command:
+
+```bash
+modal serve golden_gate_bridge.serve
+```
+
+## Deploy
+
+To deploy the model, we execute the following command:
+
+```bash
+modal deploy golden_gate_bridge.serve
 ```
 
 ## CI Checks
@@ -30,4 +48,10 @@ modal run --detach golden_gate_bridge.llama3_golden_gate --suffix-filepath=./gol
 ruff check
 ruff format --check
 dmypy run -- golden_gate_bridge
+```
+
+## Volume
+
+```bash
+modal volume ls artifacts-volume /golden-gate-bridge-repeng
 ```

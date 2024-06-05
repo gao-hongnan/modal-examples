@@ -9,6 +9,7 @@ References
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -24,21 +25,14 @@ from transformers import (
     TextStreamer,
 )
 from transformers.tokenization_utils_base import BatchEncoding
-from pathlib import Path
 
-from .config import (
-    ALLOW_WANDB,
-    GPU,
-    IMAGE,
-    VOLUME,
-    Composer,
-    Constants,
-    State,
-    app,
-)
+from .config import ALLOW_WANDB, GPU, IMAGE, VOLUME, Composer, Constants, app
+from .state import State
 
 
-def load_tokenizer(model_name: str, **kwargs: Any) -> PreTrainedTokenizerBase | PreTrainedTokenizerFast:
+def load_tokenizer(
+    model_name: str, **kwargs: Any
+) -> PreTrainedTokenizerBase | PreTrainedTokenizerFast:
     """Load tokenizer from huggingface.
 
     Parameters
@@ -183,8 +177,6 @@ def generate(
     labeled_vectors: list[tuple[str, ControlVector]],
     show_baseline: bool = False,
 ) -> State:
-
-
     # inference on master gpu
     input_ids: BatchEncoding[torch.Tensor, torch.Tensor] = tokenizer(
         input, return_tensors="pt"
@@ -228,6 +220,9 @@ def train_control_vector(
 ) -> State:
     from repeng import ControlModel, ControlVector
 
+    # Create save directory
+    Path(composer.common.save_directory).mkdir(parents=True, exist_ok=True)
+
     if ALLOW_WANDB:
         run = wandb.init(
             project=composer.wandb_config.project,
@@ -248,8 +243,7 @@ def train_control_vector(
     )
     wrapped_model = model
     model = ControlModel(wrapped_model, layer_ids=composer.llama_config.layer_ids)
-    # save the state
-    state.controlled_model = model
+    # state.controlled_model = model
 
     bridge_dataset = make_dataset(
         template=chat_template_unparse([("user", "{persona}")]),
@@ -272,9 +266,9 @@ def train_control_vector(
         tokenizer=tokenizer,
         input=chat_template_unparse([("user", f"{question}")]),
         labeled_vectors=[
-            ("0.7 * bridge_vector", 0.7 * bridge_vector),
+            # ("0.7 * bridge_vector", 0.7 * bridge_vector),
             ("0.9 * bridge_vector", 0.9 * bridge_vector),
-            ("1.1 * bridge_vector", 1.1 * bridge_vector),
+            # ("1.1 * bridge_vector", 1.1 * bridge_vector),
         ],
     )
 
@@ -283,10 +277,30 @@ def train_control_vector(
             run.log(answer)
         run.finish()
 
-    save_dir = Path(f"{str(Constants.TARGET_ARTIFACTS_DIR)}") / f"{Constants.APP_NAME}"
-    save_dir.mkdir(parents=True, exist_ok=True)
-    state.save_snapshots(filepath=f"{save_dir}/{composer.common.save_to}")
+    state.save_snapshots(
+        filepath=f"{composer.common.save_directory}/{composer.common.save_filename}"
+    )
+    # NOTE: save `controlled_vector` as a `.pt` and `.gguf` file
+    state.controlled_vector.export_gguf(
+        path=f"{composer.common.save_directory}/{composer.common.gguf_filename}"
+    )
     VOLUME.commit()
+
+    _load_saved_control_vector = ControlVector.import_gguf(
+        path=f"{composer.common.save_directory}/{composer.common.gguf_filename}"
+    )
+    generate(
+        composer=composer,
+        state=state,
+        model=model,
+        tokenizer=tokenizer,
+        input=chat_template_unparse([("user", f"{question}")]),
+        labeled_vectors=[
+            # ("0.7 * bridge_vector", 0.7 * bridge_vector),
+            ("0.9 * bridge_vector", 0.9 * _load_saved_control_vector),
+            # ("1.1 * bridge_vector", 1.1 * bridge_vector),
+        ],
+    )
     return state
 
 
@@ -304,7 +318,7 @@ def main(suffix_filepath: str, question: str = "What are you?") -> None:
     suffixes = load_suffixes(suffix_filepath)
 
     composer = Composer()
-    pprint(composer)
+    composer.pretty_print()
 
     state = State()
 
