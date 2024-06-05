@@ -13,13 +13,18 @@ import torch
 import wandb
 from repeng import ControlModel, ControlVector
 from rich.pretty import pprint
-from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast, TextStreamer
+from transformers import (
+    PreTrainedTokenizerBase,
+    PreTrainedTokenizerFast,
+    TextStreamer,
+)
 from transformers.generation.utils import GenerateOutput
 from transformers.tokenization_utils_base import BatchEncoding
+from wandb.sdk.wandb_run import Run
 
 from .config import ALLOW_WANDB, GPU, IMAGE, VOLUME, Composer, Constants, app
 from .logger import get_logger
-from .state import ModelOutput, State
+from .state import GenerationOutput, State
 from .utils import (
     chat_template_unparse,
     load_model,
@@ -33,13 +38,12 @@ logger = get_logger(__name__)
 
 def generate(
     composer: Composer,
-    state: State,
     *,
     model: ControlModel,
     tokenizer: PreTrainedTokenizerBase | PreTrainedTokenizerFast,
     input: str,
     labeled_vectors: list[tuple[str, ControlVector]],
-) -> State:  # return gen config and model output not state
+) -> GenerationOutput:
     """Generate responses for the given input using the control model."""
     # inference on master gpu
     input_ids: BatchEncoding[torch.Tensor, torch.Tensor] = tokenizer(
@@ -49,7 +53,7 @@ def generate(
     composer.generation_config.pad_token_id = tokenizer.eos_token_id
 
     def gen(label: str) -> GenerateOutput | torch.LongTensor:
-        logger.info(f"Generating for label: {label}")
+        logger.info("Generating response for label: %s", label)
 
         output = model.generate(
             streamer=TextStreamer(tokenizer),
@@ -61,18 +65,26 @@ def generate(
         )
         return output
 
+    answers: list[dict[str, str]] = []
     if composer.generation_config.show_baseline:
         model.reset()
         decoded = tokenizer.decode(gen("baseline").squeeze()).strip()
-        state.answers.append({"baseline": decoded})
+        answers.append({"baseline": decoded})
 
     for label, vector in labeled_vectors:
         model.set_control(vector)
         decoded = tokenizer.decode(gen(label).squeeze()).strip()
-        state.answers.append({label: decoded})
+        answers.append({label: decoded})
 
     model.reset()
-    return state
+    return GenerationOutput(
+        answers=answers,
+        model_name=Constants.MODEL_NAME,
+        identifier=composer.registry.identifier,
+        modal_version=Constants.MODAL_VERSION,
+        app_name=Constants.APP_NAME,
+        generation_config=composer.generation_config,
+    )
 
 
 @app.function(
@@ -89,16 +101,14 @@ def train_control_vector(
     from repeng import ControlModel, ControlVector
 
     # Create save directory
-    Path(f"{composer.registry.save_directory}/{composer.registry.identifier}").mkdir(
-        parents=True, exist_ok=True
-    )
+    model_registry = composer.registry.model_registry
+    Path(model_registry).mkdir(parents=True, exist_ok=True)
 
     if ALLOW_WANDB:
-        run = wandb.init(
+        run: Run = wandb.init(
             project=composer.wandb_config.project,
             entity=composer.wandb_config.entity,
         )
-        print(type(run))
         run.config.update(composer.model_dump())
 
     tokenizer = load_tokenizer(Constants.MODEL_NAME)
@@ -113,8 +123,9 @@ def train_control_vector(
         Constants.MODEL_NAME, device_map=composer.llama_config.device_map
     )
     wrapped_model = model
-    model = ControlModel(wrapped_model, layer_ids=composer.llama_config.layer_ids)
-    # state.controlled_model = model
+    model = ControlModel(
+        wrapped_model, layer_ids=composer.llama_config.layer_ids
+    )
 
     bridge_dataset = make_dataset(
         template=chat_template_unparse([("user", "{persona}")]),
@@ -130,9 +141,8 @@ def train_control_vector(
     # state is mutable
     state.controlled_vector = bridge_vector
 
-    state = generate(
+    output: GenerationOutput = generate(
         composer=composer,
-        state=state,
         model=model,
         tokenizer=tokenizer,
         input=chat_template_unparse([("user", f"{query}")]),
@@ -141,6 +151,7 @@ def train_control_vector(
             for coef in composer.generation_config.coefficients
         ],
     )
+    state.answers = output.answers
 
     if ALLOW_WANDB:
         for answer in state.answers:
@@ -148,11 +159,11 @@ def train_control_vector(
         run.finish()
 
     state.save_snapshots(
-        filepath=f"{composer.registry.save_directory}/{composer.registry.save_filename}"
+        filepath=f"{model_registry}/{composer.registry.save_filename}"
     )
     # NOTE: save `controlled_vector` as a `.pt` and `.gguf` file
     state.controlled_vector.export_gguf(
-        path=f"{composer.registry.save_directory}/{composer.registry.gguf_filename}"
+        path=f"{model_registry}/{composer.registry.gguf_filename}"
     )
     VOLUME.commit()
     return state

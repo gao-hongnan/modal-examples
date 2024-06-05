@@ -1,17 +1,18 @@
 """
 Configuration, State, Constants and Initialization.
 """
+
 from __future__ import annotations
 
 import os
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, Type
+from typing import Any, Literal
 
 import modal
 import modal.gpu
 from modal import App, Image, Volume
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 ALLOW_WANDB = os.environ.get("ALLOW_WANDB", "false").lower() == "true"
 
@@ -22,9 +23,7 @@ class Constants(str, Enum):
     MODAL_VERSION = "0.62.181"
     APP_NAME = "golden-gate-bridge-repeng"
     CACHE_DIR = "/root/.cache/huggingface"
-    GIT_SHA = (
-        "d15085247ccefe38261a12ea70d9c72609bb1081"  # repeng's git sha, not our app
-    )
+    GIT_SHA = "d15085247ccefe38261a12ea70d9c72609bb1081"  # repeng's git sha, not our app
     SOURCE_ARTIFACTS_DIR = "artifacts-volume"
     TARGET_ARTIFACTS_DIR = "/artifacts"
     TIMEOUT = "3600"
@@ -44,7 +43,9 @@ def download_model_weights() -> None:
     """Download model weights from huggingface hub and cache it to `CACHE_DIR`."""
     from huggingface_hub import snapshot_download
 
-    snapshot_download(repo_id=Constants.MODEL_NAME, cache_dir=Constants.CACHE_DIR)
+    snapshot_download(
+        repo_id=Constants.MODEL_NAME, cache_dir=Constants.CACHE_DIR
+    )
 
 
 IMAGE = (
@@ -71,12 +72,16 @@ app = App(
     image=IMAGE,
     secrets=[
         modal.Secret.from_name("huggingface"),
-        modal.Secret.from_dict({"ALLOW_WANDB": os.environ.get("ALLOW_WANDB", "false")}),
+        modal.Secret.from_dict(
+            {"ALLOW_WANDB": os.environ.get("ALLOW_WANDB", "false")}
+        ),
         *([modal.Secret.from_name("wandb")] if ALLOW_WANDB else []),
     ],
 )
 
-VOLUME = Volume.from_name(label=Constants.SOURCE_ARTIFACTS_DIR, create_if_missing=True)
+VOLUME = Volume.from_name(
+    label=Constants.SOURCE_ARTIFACTS_DIR, create_if_missing=True
+)
 GPU = modal.gpu.H100(count=2)
 
 
@@ -99,7 +104,9 @@ class DatasetConfig(BaseModel):
 class GoldenGateBridgeConfig(DatasetConfig):
     """Dataset configuration for Golden Gate Bridge."""
 
-    positive_personas: list[str] = ["Please act as if you are the golden gate bridge"]
+    positive_personas: list[str] = [
+        "Please act as if you are the golden gate bridge"
+    ]
     negative_personas: list[str] = [""]
 
 
@@ -123,20 +130,35 @@ class LlamaConfig(BaseModel):
     layer_ids: list[int] = Field(default=list(range(20, 60)))
 
 
-class GenerationConfig(BaseModel):
-    """Base class for generation configuration. Not to be confused with
-    `GenerationConfig` from `transformers` library."""
+class ServingConfig(BaseModel):
+    """Base class for serving configuration."""
+
+    question: str = Field(
+        default="What are you?",
+        description="The input text to generate responses for.",
+    )
 
     # hf config
-    pad_token_id: int = Field(default=None)
     max_new_tokens: int = 256
     repetition_penalty: float = 1.25
     temperature: float = 0.7
 
     # custom config
     show_baseline: bool = False
+    coefficients: list[float] = Field(
+        default_factory=lambda: [0.9, 1.1], examples=[[0.9, 1.1]]
+    )
+
+
+class GenerationConfig(ServingConfig):
+    """Base class for generation configuration. Not to be confused with
+    `GenerationConfig` from `transformers` library."""
+
+    # hf config
+    pad_token_id: int = Field(default=None)
+
+    # custom config
     device: str = "cuda:0"
-    coefficients: list[float] = Field(default_factory=lambda: [0.9, 1.1])
 
 
 class Registry(BaseModel):
@@ -148,16 +170,19 @@ class Registry(BaseModel):
     save_filename: str = "controlled_golden_gate_bridge_repeng.pt"
     gguf_filename: str = "controlled_golden_gate_bridge_repeng.gguf"
     save_directory: str = Field(default=None)  # Initialize as post init
+    model_registry: str = Field(default=None)
 
     def model_post_init(self, __context: Any) -> None:
         """Post initialization for the model."""
-        self.save_directory = f"{Constants.TARGET_ARTIFACTS_DIR}/{Constants.APP_NAME}"
+        self.save_directory = (
+            f"{Constants.TARGET_ARTIFACTS_DIR}/{Constants.APP_NAME}"
+        )
+        self.model_registry = f"{self.save_directory}/{self.identifier}"
 
+    class Config:
+        """Pydantic configuration."""
 
-class ServingConfig(BaseModel):
-    """Base class for serving configuration."""
-
-    strength: float = 0.9
+        protected_namespaces = ()
 
 
 class WandbConfig(BaseModel):
@@ -176,7 +201,9 @@ class Composer(BaseModel):
     repeng_config: RepengConfig = Field(default_factory=RepengConfig)
     tokenizer_config: TokenizerConfig = Field(default_factory=TokenizerConfig)
     llama_config: LlamaConfig = Field(default_factory=LlamaConfig)
-    generation_config: GenerationConfig = Field(default_factory=GenerationConfig)
+    generation_config: GenerationConfig = Field(
+        default_factory=GenerationConfig
+    )
     wandb_config: WandbConfig = Field(default_factory=WandbConfig)
     registry: Registry = Field(default_factory=Registry)
     # constants: Type[Constants] = Constants

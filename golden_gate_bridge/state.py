@@ -6,7 +6,7 @@ import torch
 from pydantic import BaseModel, Field
 from repeng import ControlModel, ControlVector
 
-from .config import Composer
+from .config import Composer, GenerationConfig
 
 
 class State(BaseModel):
@@ -21,12 +21,14 @@ class State(BaseModel):
     def save_snapshots(self, filepath: str) -> None:
         """Save the state dictionaries of the components to a file."""
         state = {
-            "controlled_model": self.controlled_model.state_dict()
-            if self.controlled_model
-            else None,
-            "controlled_vector": self.controlled_vector
-            if self.controlled_vector
-            else None,
+            "controlled_model": (
+                self.controlled_model.state_dict()
+                if self.controlled_model
+                else None
+            ),
+            "controlled_vector": (
+                self.controlled_vector if self.controlled_vector else None
+            ),
             "answers": self.answers,
             "composer": self.composer.model_dump() if self.composer else None,
         }
@@ -61,12 +63,21 @@ class State(BaseModel):
         use_enum_values = True
 
 
-class ModelOutput(BaseModel):
+class GenerationOutput(BaseModel):
     """Base class for model output. No good way to pass selected fields to fastapi
     endpoint for now, so duplicate some fields here.
 
     See https://stackoverflow.com/questions/78527525/allow-only-certain-fields-of-pydantic-model-to-be-passed-to-fastapi-endpoint
     """
 
+    model_name: str
+    identifier: str
+    modal_version: str
+    app_name: str
     answers: list[dict[str, str]] = Field(default_factory=list)
-    composer: Composer | None = Field(default=None)
+    generation_config: GenerationConfig
+
+    class Config:
+        """Pydantic configuration."""
+
+        protected_namespaces = ()

@@ -34,7 +34,9 @@ def load_tokenizer(
     """
 
     cache_dir = kwargs.pop("cache_dir", Constants.CACHE_DIR)
-    return AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir, **kwargs)
+    return AutoTokenizer.from_pretrained(
+        model_name, cache_dir=cache_dir, **kwargs
+    )
 
 
 def load_model(model_name: str, **kwargs: Any) -> PreTrainedModel:

@@ -4,33 +4,26 @@ from typing import Optional
 
 import modal
 from fastapi import FastAPI, Header
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from repeng import ControlModel, ControlVector
 
-from .config import GPU, IMAGE, VOLUME, Composer, Constants, GenerationConfig, app
-from .state import State
+from .config import (
+    GPU,
+    IMAGE,
+    VOLUME,
+    Composer,
+    Constants,
+    GenerationConfig,
+    ServingConfig,
+    app,
+)
+from .state import GenerationOutput
 from .train import generate
 from .utils import load_model, load_tokenizer
 
 IDENTIFIER: str = "20240605160831"
 
 web_app = FastAPI()
-
-
-class ModelInput(BaseModel):
-    text: str = Field(
-        default="What are you?", description="The input text to generate responses for."
-    )
-
-    max_new_tokens: int = 256
-    repetition_penalty: float = 1.25
-    temperature: float = 0.7
-
-    # custom config
-    show_baseline: bool = False
-    coefficients: list[float] = Field(
-        default_factory=lambda: [0.9, 1.1], examples=[[0.9, 1.1]]
-    )
 
 
 class ModelMetdata(BaseModel):
@@ -61,9 +54,10 @@ class Model:
         """
         self.composer = Composer()
         self.composer.pretty_print()
-        self.state = State()
         self.tokenizer = load_tokenizer(self.pretrained_model_name_or_path)
-        self.tokenizer.pad_token_id = self.composer.tokenizer_config.pad_token_id
+        self.tokenizer.pad_token_id = (
+            self.composer.tokenizer_config.pad_token_id
+        )
         self.model = load_model(
             self.pretrained_model_name_or_path,
             device_map=self.composer.llama_config.device_map,
@@ -73,31 +67,33 @@ class Model:
         )
 
     @modal.method()
-    def inference(self, model_input: ModelInput) -> list[dict[str, str]]:
+    def inference(self, serving_config: ServingConfig) -> GenerationOutput:
         wrapped_model = self.model
         model = ControlModel(
             wrapped_model, layer_ids=self.composer.llama_config.layer_ids
         )
         self.composer.generation_config = GenerationConfig(
-            max_new_tokens=model_input.max_new_tokens,
-            repetition_penalty=model_input.repetition_penalty,
-            temperature=model_input.temperature,
-            show_baseline=model_input.show_baseline,
-            coefficients=model_input.coefficients,
+            max_new_tokens=serving_config.max_new_tokens,
+            repetition_penalty=serving_config.repetition_penalty,
+            temperature=serving_config.temperature,
+            show_baseline=serving_config.show_baseline,
+            coefficients=serving_config.coefficients,
         )
 
-        state = generate(
+        output = generate(
             composer=self.composer,
-            state=self.state,
             model=model,
             tokenizer=self.tokenizer,
-            input=model_input.text,
+            input=serving_config.question,
             labeled_vectors=[
                 (f"{coef} * bridge_vector", coef * self.controlled_vector)
                 for coef in self.composer.generation_config.coefficients
             ],
         )
-        return state.answers
+        from rich.pretty import pprint
+
+        pprint(output)
+        return output
 
 
 @web_app.get("/")
@@ -105,13 +101,13 @@ async def root() -> dict[str, str]:
     return {"message": "Welcome to the Golden Gate Bridge!"}
 
 
-@web_app.post("/api/v1/generate")
+@web_app.post("/api/v1/generate", response_model=GenerationOutput)
 async def generate_output(
-    model_input: ModelInput, identifier: Optional[str] = Header(None)
-) -> list[dict[str, str]]:
+    serving_config: ServingConfig, identifier: Optional[str] = Header(None)
+) -> GenerationOutput:
     identifier = identifier or IDENTIFIER
     model = Model()
-    return model.inference.remote(model_input)  # type: ignore[no-any-return]
+    return model.inference.remote(serving_config)  # type: ignore[no-any-return]
 
 
 @app.function()
