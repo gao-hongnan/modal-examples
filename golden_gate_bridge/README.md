@@ -34,7 +34,7 @@ To serve the model, we execute the following command:
 modal serve golden_gate_bridge.serve
 ```
 
-## Deploy
+## Deploy API
 
 To deploy/re-deploy the model, we execute the following command:
 
@@ -61,6 +61,24 @@ curl -X 'POST' \
   ]
 }'
 ```
+
+One can access the swagger ui [here](https://gao-hongnan--golden-gate-bridge-repeng-web.modal.run/docs).
+
+## Serve/Deploy Gradio
+
+To serve the Gradio interface, we execute the following command:
+
+```bash
+modal serve golden_gate_bridge.ui
+```
+
+To deploy the Gradio interface, we execute the following command:
+
+```bash
+modal deploy golden_gate_bridge.ui
+```
+
+One can access the live link [here](https://gao-hongnan--golden-gate-bridge-repeng-ui.modal.run/).
 
 ## CI Checks
 

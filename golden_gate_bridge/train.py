@@ -159,6 +159,7 @@ def train_control_vector(
             run.log(answer)
         run.finish()
 
+    state.composer = composer
     state.save_snapshots(
         filepath=f"{model_registry}/{composer.registry.save_filename}"
     )

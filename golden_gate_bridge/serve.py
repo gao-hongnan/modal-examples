@@ -23,7 +23,8 @@ with IMAGE.imports():
     from repeng import ControlModel, ControlVector
 
 
-IDENTIFIER: str = "20240605160831"
+IDENTIFIER: str = "20240606181106"
+IDENTIFIERS: list[str] = ["20240605160831", "20240606181106"]
 
 web_app = FastAPI()
 
@@ -49,6 +50,7 @@ class Model:
         First load/deployment is slow, subsequent ones should be cached.
         """
         self.composer = Composer()
+        self.composer.registry.identifier = self.identifier
         self.composer.pretty_print()
         self.tokenizer = load_tokenizer(self.pretrained_model_name_or_path)
         self.tokenizer.pad_token_id = (
@@ -105,7 +107,7 @@ async def generate_output(
     Example:
     ```bash
     curl -X 'POST' \
-    'https://gao-hongnan--golden-gate-bridge-repeng-web-dev.modal.run/api/v1/generate' \
+    'https://gao-hongnan--golden-gate-bridge-repeng-web.modal.run/api/v1/generate' \
     -H 'accept: application/json' \
     -H 'identifier: 20240605160831' \
     -H 'Content-Type: application/json' \
@@ -135,7 +137,3 @@ async def generate_output(
 @modal.asgi_app()
 def web() -> FastAPI:
     return web_app
-
-
-if __name__ == "__main__":
-    app.serve()  # type: ignore[operator]
