@@ -42,9 +42,12 @@ class ModelMetdata(BaseModel):
     volumes={Constants.TARGET_ARTIFACTS_DIR: VOLUME},
 )
 class Model:
-    identifier: str = IDENTIFIER
     pretrained_model_name_or_path: str = Constants.MODEL_NAME
     device: str = "cuda:0"  # master gpu for inference
+
+    def __init__(self, identifier: str = IDENTIFIER) -> None:
+        self.identifier = identifier
+
 
     @modal.enter()
     def start_engine(self) -> None:
@@ -105,8 +108,11 @@ async def root() -> dict[str, str]:
 async def generate_output(
     serving_config: ServingConfig, identifier: Optional[str] = Header(None)
 ) -> GenerationOutput:
+    """Generate responses for the given input using the control model. The
+    **identifier** is optional and defaults to the value of the `IDENTIFIER`
+    constant - which retrieves the specific model version."""
     identifier = identifier or IDENTIFIER
-    model = Model()
+    model = Model(identifier=identifier)
     return model.inference.remote(serving_config)  # type: ignore[no-any-return]
 
 
