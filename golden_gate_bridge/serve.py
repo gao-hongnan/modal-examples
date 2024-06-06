@@ -4,7 +4,6 @@ from typing import Optional
 
 import modal
 from fastapi import FastAPI, Header
-from pydantic import BaseModel
 from repeng import ControlModel, ControlVector
 
 from .config import (
@@ -26,14 +25,6 @@ IDENTIFIER: str = "20240605160831"
 web_app = FastAPI()
 
 
-class ModelMetdata(BaseModel):
-    model_name: str
-    model_id: str
-
-    class Config:
-        protected_namespaces = ()
-
-
 @app.cls(
     image=IMAGE,
     gpu=GPU,
@@ -47,7 +38,6 @@ class Model:
 
     def __init__(self, identifier: str = IDENTIFIER) -> None:
         self.identifier = identifier
-
 
     @modal.enter()
     def start_engine(self) -> None:
@@ -93,9 +83,6 @@ class Model:
                 for coef in self.composer.generation_config.coefficients
             ],
         )
-        from rich.pretty import pprint
-
-        pprint(output)
         return output
 
 
@@ -108,15 +95,40 @@ async def root() -> dict[str, str]:
 async def generate_output(
     serving_config: ServingConfig, identifier: Optional[str] = Header(None)
 ) -> GenerationOutput:
-    """Generate responses for the given input using the control model. The
+    r"""Generate responses for the given input using the control model. The
     **identifier** is optional and defaults to the value of the `IDENTIFIER`
-    constant - which retrieves the specific model version."""
+    constant - which retrieves the specific model version.
+
+    Example:
+    ```bash
+    curl -X 'POST' \
+    'https://gao-hongnan--golden-gate-bridge-repeng-web-dev.modal.run/api/v1/generate' \
+    -H 'accept: application/json' \
+    -H 'identifier: 20240605160831' \
+    -H 'Content-Type: application/json' \
+    -d '{
+    "question": "What are you?",
+    "max_new_tokens": 256,
+    "repetition_penalty": 1.25,
+    "temperature": 0.7,
+    "show_baseline": false,
+    "coefficients": [
+        0.9,
+        1.1
+    ]
+    }'
+    ```
+    """
     identifier = identifier or IDENTIFIER
     model = Model(identifier=identifier)
     return model.inference.remote(serving_config)  # type: ignore[no-any-return]
 
 
-@app.function()
+@app.function(
+    image=IMAGE,
+    timeout=int(Constants.TIMEOUT),
+    container_idle_timeout=int(Constants.CONTAINER_IDLE_TIMEOUT),
+)
 @modal.asgi_app()
 def web() -> FastAPI:
     return web_app

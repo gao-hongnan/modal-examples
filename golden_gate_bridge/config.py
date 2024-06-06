@@ -28,6 +28,7 @@ class Constants(str, Enum):
     TARGET_ARTIFACTS_DIR = "/artifacts"
     TIMEOUT = "3600"
     CONTAINER_IDLE_TIMEOUT = "600"
+    CONCURRENCY_LIMIT = "3"
     MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
 
     def __str__(self) -> str:
@@ -58,6 +59,7 @@ IMAGE = (
         "rich==13.7.1",
         "pydantic~=2.0.0",
         "fastapi==0.108.0",  # compatible w pydantic 2.x, see https://github.com/Sanster/IOPaint/issues/512
+        "gradio~=3.50.2",
     )
     .run_function(
         download_model_weights,
