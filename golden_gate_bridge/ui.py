@@ -4,7 +4,6 @@ from typing import Any
 
 import modal
 from fastapi import FastAPI
-from repeng import ControlModel, ControlVector
 
 from .config import (
     GPU,
@@ -20,6 +19,12 @@ from .logger import get_logger
 from .state import GenerationOutput
 from .train import generate
 from .utils import load_model, load_tokenizer
+
+with IMAGE.imports():
+    import gradio as gr
+    from gradio.routes import mount_gradio_app
+    from repeng import ControlModel, ControlVector
+
 
 logger = get_logger(__name__)
 
@@ -136,9 +141,6 @@ class Model:
 )
 @modal.asgi_app()
 def ui() -> FastAPI:
-    import gradio as gr
-    from gradio.routes import mount_gradio_app
-
     logger.info("Starting the UI...")
 
     def go(

@@ -1,18 +1,21 @@
+from __future__ import annotations
+
 import json
 import os
 from typing import Any
 
-import torch
-from repeng import DatasetEntry
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from .config import IMAGE, Constants
 
-from .config import Constants
+with IMAGE.imports():
+    import torch
+    from repeng import DatasetEntry
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        PreTrainedModel,
+        PreTrainedTokenizerBase,
+        PreTrainedTokenizerFast,
+    )
 
 
 def load_tokenizer(

@@ -4,7 +4,6 @@ from typing import Optional
 
 import modal
 from fastapi import FastAPI, Header
-from repeng import ControlModel, ControlVector
 
 from .config import (
     GPU,
@@ -19,6 +18,10 @@ from .config import (
 from .state import GenerationOutput
 from .train import generate
 from .utils import load_model, load_tokenizer
+
+with IMAGE.imports():
+    from repeng import ControlModel, ControlVector
+
 
 IDENTIFIER: str = "20240605160831"
 

@@ -6,21 +6,9 @@ References
 ----------
 -    Source Repository: [repeng](https://github.com/vgel/repeng/tree/main) authored by [Theia](https://vgel.me/).
 """
+from __future__ import annotations  # see PEP 563
 
 from pathlib import Path
-
-import torch
-import wandb
-from repeng import ControlModel, ControlVector
-from rich.pretty import pprint
-from transformers import (
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-    TextStreamer,
-)
-from transformers.generation.utils import GenerateOutput
-from transformers.tokenization_utils_base import BatchEncoding
-from wandb.sdk.wandb_run import Run
 
 from .config import ALLOW_WANDB, GPU, IMAGE, VOLUME, Composer, Constants, app
 from .logger import get_logger
@@ -32,6 +20,20 @@ from .utils import (
     load_tokenizer,
     make_dataset,
 )
+
+with IMAGE.imports():
+    import torch
+    import wandb
+    from repeng import ControlModel, ControlVector
+    from transformers import (
+        PreTrainedTokenizerBase,
+        PreTrainedTokenizerFast,
+        TextStreamer,
+    )
+    from transformers.generation.utils import GenerateOutput
+    from transformers.tokenization_utils_base import BatchEncoding
+    from wandb.sdk.wandb_run import Run
+
 
 logger = get_logger(__name__)
 
@@ -95,10 +97,9 @@ def generate(
     volumes={Constants.TARGET_ARTIFACTS_DIR: VOLUME},
 )
 def train_control_vector(
-    composer: Composer, state: State, *, suffixes: list[str], query: str
-) -> State:
+    composer: Composer, state: State, *, suffixes: list[str], question: str
+) -> None:
     """Train the control vector, and generate responses."""
-    from repeng import ControlModel, ControlVector
 
     # Create save directory
     model_registry = composer.registry.model_registry
@@ -145,7 +146,7 @@ def train_control_vector(
         composer=composer,
         model=model,
         tokenizer=tokenizer,
-        input=chat_template_unparse([("user", f"{query}")]),
+        input=chat_template_unparse([("user", f"{question}")]),
         labeled_vectors=[
             (f"{coef} * bridge_vector", coef * bridge_vector)
             for coef in composer.generation_config.coefficients
@@ -166,18 +167,17 @@ def train_control_vector(
         path=f"{model_registry}/{composer.registry.gguf_filename}"
     )
     VOLUME.commit()
-    return state
 
 
 @app.local_entrypoint()
-def main(suffix_filepath: str, query: str = "What are you?") -> None:
+def main(suffix_filepath: str, question: str = "What are you?") -> None:
     """Main entrypoint for the golden gate bridge.
 
     Parameters
     ----------
     suffix_filepath : str
         File path to load suffixes from.
-    query : str, optional
+    question : str, optional
         Question to ask the model, by default "What are you?".
     """
     suffixes = load_suffixes(suffix_filepath)
@@ -187,7 +187,6 @@ def main(suffix_filepath: str, query: str = "What are you?") -> None:
 
     state = State()
 
-    trained_state: State = train_control_vector.remote(
-        composer=composer, state=state, suffixes=suffixes, query=query
+    train_control_vector.remote(
+        composer=composer, state=state, suffixes=suffixes, question=question
     )
-    pprint(trained_state.answers)
