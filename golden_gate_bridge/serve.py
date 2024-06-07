@@ -70,12 +70,14 @@ class Model:
         model = ControlModel(
             wrapped_model, layer_ids=self.composer.llama_config.layer_ids
         )
+        # update composer generation config
         self.composer.generation_config = GenerationConfig(
             max_new_tokens=serving_config.max_new_tokens,
             repetition_penalty=serving_config.repetition_penalty,
             temperature=serving_config.temperature,
             show_baseline=serving_config.show_baseline,
             coefficients=serving_config.coefficients,
+            question=serving_config.question,
         )
 
         output = generate(
