@@ -27,8 +27,9 @@ class Constants(str, Enum):
     SOURCE_ARTIFACTS_DIR = "artifacts-volume"
     TARGET_ARTIFACTS_DIR = "/artifacts"
     TIMEOUT = "3600"
-    CONTAINER_IDLE_TIMEOUT = "600"
-    CONCURRENCY_LIMIT = "3"
+    CONTAINER_IDLE_TIMEOUT = "1200"  # 20 minutes max
+    CONCURRENCY_LIMIT = "10"
+    KEEP_WARM = "2"
     MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
 
     def __str__(self) -> str:

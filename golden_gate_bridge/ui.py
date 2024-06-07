@@ -31,6 +31,8 @@ web_app = FastAPI()
     timeout=int(Constants.TIMEOUT),
     container_idle_timeout=int(Constants.CONTAINER_IDLE_TIMEOUT),
     concurrency_limit=int(Constants.CONCURRENCY_LIMIT),
+    keep_warm=int(Constants.KEEP_WARM),
+    enable_memory_snapshot=True,
 )
 @modal.asgi_app()
 def ui() -> FastAPI:
