@@ -30,6 +30,7 @@ class Constants(str, Enum):
     CONTAINER_IDLE_TIMEOUT = "1200"  # 20 minutes max
     CONCURRENCY_LIMIT = "10"
     KEEP_WARM = "2"
+    ENABLE_MEMORY_SNAPSHOT = "true"
     MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
 
     def __str__(self) -> str:
