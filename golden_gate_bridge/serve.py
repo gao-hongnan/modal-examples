@@ -35,6 +35,7 @@ web_app = FastAPI()
     timeout=int(Constants.TIMEOUT),
     container_idle_timeout=int(Constants.CONTAINER_IDLE_TIMEOUT),
     volumes={Constants.TARGET_ARTIFACTS_DIR: VOLUME},
+    enable_memory_snapshot=True,
 )
 class Model:
     pretrained_model_name_or_path: str = Constants.MODEL_NAME
