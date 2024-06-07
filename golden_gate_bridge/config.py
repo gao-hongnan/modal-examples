@@ -28,8 +28,8 @@ class Constants(str, Enum):
     TARGET_ARTIFACTS_DIR = "/artifacts"
     TIMEOUT = "3600"
     CONTAINER_IDLE_TIMEOUT = "1200"  # 20 minutes max
-    CONCURRENCY_LIMIT = "10"
-    KEEP_WARM = "2"
+    CONCURRENCY_LIMIT = "1"
+    KEEP_WARM = "1"
     ENABLE_MEMORY_SNAPSHOT = "true"
     MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
 
