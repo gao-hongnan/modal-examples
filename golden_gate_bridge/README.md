@@ -195,6 +195,12 @@ modal volume ls artifacts-volume golden-gate-bridge-repeng/20240605160831
 | golden-gate-bridge-repeng/20240605160831/controlled_golden_gate_bridge_repeng.pt   | file | 2024-06-05 16:12 +08 | 3.7 MiB |
 | golden-gate-bridge-repeng/20240605160831/controlled_golden_gate_bridge_repeng.gguf | file | 2024-06-05 16:12 +08 | 2.5 MiB |
 
+## CHANGELOG
+
+Latest app id @ap-w6lsbMKBgeKFkNyIRSzg6x trained and ran on a grid
+from $0.6$ to $1.1$ with step size $0.05$ for the coefficients. This
+serves as a baseline for the model.
+
 ## References And Further Readings
 
 First, a special thanks to the Modal team for their prompt support and guidance

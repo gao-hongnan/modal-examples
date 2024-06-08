@@ -20,6 +20,7 @@ from .utils import (
     load_suffixes,
     load_tokenizer,
     make_dataset,
+    print_layers,
 )
 
 with IMAGE.imports():
@@ -69,6 +70,7 @@ def generate(
         return output
 
     answers: list[dict[str, str]] = []
+
     if composer.generation_config.show_baseline:
         model.reset()
         decoded = tokenizer.decode(gen("baseline").squeeze()).strip()
@@ -80,6 +82,7 @@ def generate(
         answers.append({label: decoded})
 
     model.reset()
+
     return GenerationOutput(
         answers=answers,
         model_name=Constants.MODEL_NAME,
@@ -107,7 +110,7 @@ def train_control_vector(
     Path(model_registry).mkdir(parents=True, exist_ok=True)
 
     if ALLOW_WANDB:
-        run: Run = wandb.init(
+        run: Run = wandb.init(  # type: ignore[assignment]
             project=composer.wandb_config.project,
             entity=composer.wandb_config.entity,
         )
@@ -124,6 +127,8 @@ def train_control_vector(
     model = load_model(
         Constants.MODEL_NAME, device_map=composer.llama_config.device_map
     )
+    print_layers(model)
+
     wrapped_model = model
     model = ControlModel(
         wrapped_model, layer_ids=composer.llama_config.layer_ids

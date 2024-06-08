@@ -155,3 +155,23 @@ def chat_template_unparse(messages: list[tuple[str, str]]) -> str:
         # prefill assistant prefix
         template.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
     return "".join(template)
+
+
+def print_layers(model: PreTrainedModel) -> None:
+    """Print named modules of the model.
+
+    Parameters
+    ----------
+    model : PreTrainedModel
+        Model to print named modules of.
+    """
+
+    if hasattr(model, "model"):  # mistral-like
+        _layers = model.model.layers
+    elif hasattr(model, "transformer"):  # gpt-2-like
+        _layers = model.transformer.h
+    else:
+        raise ValueError(f"don't know how to get layer list for {type(model)}")
+
+    for i, layer in enumerate(_layers):
+        print(f"Layer {i}: {layer}")

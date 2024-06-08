@@ -22,6 +22,7 @@ class Constants(str, Enum):
 
     MODAL_VERSION = "0.62.181"
     APP_NAME = "golden-gate-bridge-repeng"
+    FILE_NAME = "controlled_golden_gate_bridge_repeng"
     CACHE_DIR = "/root/.cache/huggingface"
     GIT_SHA = "d15085247ccefe38261a12ea70d9c72609bb1081"  # repeng's git sha, not our app
     SOURCE_ARTIFACTS_DIR = "artifacts-volume"
@@ -62,6 +63,7 @@ IMAGE = (
         "pydantic~=2.0.0",
         "fastapi==0.108.0",  # compatible w pydantic 2.x, see https://github.com/Sanster/IOPaint/issues/512
         "gradio~=3.50.2",
+        "umap-learn",  # for repeng
     )
     .run_function(
         download_model_weights,
@@ -150,7 +152,26 @@ class ServingConfig(BaseModel):
     # custom config
     show_baseline: bool = False
     coefficients: list[float] = Field(
-        default_factory=lambda: [0.9, 1.1], examples=[[0.9, 1.1]]
+        default_factory=lambda: [
+            # 0.3,
+            # 0.35,
+            # 0.4,
+            # 0.45,
+            # 0.5,
+            # 0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9,
+            0.95,
+            1.0,
+            1.05,
+            1.1,
+        ],
+        examples=[[0.9, 1.1]],
     )
 
 
