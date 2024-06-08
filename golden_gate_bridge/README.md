@@ -197,9 +197,12 @@ modal volume ls artifacts-volume golden-gate-bridge-repeng/20240605160831
 
 ## CHANGELOG
 
-Latest app id @ap-w6lsbMKBgeKFkNyIRSzg6x trained and ran on a grid
+Latest app-id@ap-w6lsbMKBgeKFkNyIRSzg6x with git commit hash@664e2002a04d5a102c81f0d5d0f58a01e0468b93 trained and ran on a grid
 from $0.6$ to $1.1$ with step size $0.05$ for the coefficients. This
-serves as a baseline for the model.
+serves as a baseline for the model. The identifier for the run is `20240608191148`.
+
+The app logs are not available to everyone, so here I include a link to the
+public weights and biases [logs here](https://wandb.ai/hongnangao/golden-gate-bridge-repeng/runs/alqffe07/logs?nw=nwuserhongnangao).
 
 ## References And Further Readings
 

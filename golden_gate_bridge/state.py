@@ -38,12 +38,22 @@ class State(BaseModel):
             state["controlled_vector"] if state["controlled_vector"] else None
         )
         answers = state["answers"]
-        composer = Composer(**state["composer"]) if state["composer"] else None
+        composer = (
+            Composer.model_validate(state["composer"])
+            if state["composer"]
+            else None
+        )
         return cls(
             controlled_vector=controlled_vector,
             answers=answers,
             composer=composer,
         )
+
+    def pretty_print(self) -> None:
+        """Pretty print the configuration."""
+        from rich.pretty import pprint
+
+        pprint(self)
 
     class Config:
         """`torch.nn.Module` is not a supported serializable type by pydantic

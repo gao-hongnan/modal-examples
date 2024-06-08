@@ -9,22 +9,21 @@ from .config import (
     GPU,
     IMAGE,
     VOLUME,
-    Composer,
     Constants,
     GenerationConfig,
     ServingConfig,
     app,
 )
-from .state import GenerationOutput
+from .state import GenerationOutput, State
 from .train import generate
-from .utils import load_model, load_tokenizer
+from .utils import chat_template_unparse, load_model, load_tokenizer
 
 with IMAGE.imports():
     from repeng import ControlModel, ControlVector
 
 
-IDENTIFIER: str = "20240605160831"
-IDENTIFIERS: list[str] = ["20240605160831", "20240606181106"]
+IDENTIFIER: str = "20240608191148"
+IDENTIFIERS: list[str] = ["20240608191148"]
 
 web_app = FastAPI()
 
@@ -45,46 +44,68 @@ class Model:
 
     @modal.enter()
     def start_engine(self) -> None:
-        """Start the engine.
+        """Start the engine."""
+        # load state from identifier
+        self.state = State.load_snapshots(
+            filepath=f"{Constants.TARGET_ARTIFACTS_DIR}/{Constants.APP_NAME}/{self.identifier}/{Constants.FILE_NAME}.pt"
+        )
+        self.state.pretty_print()
 
-        First load/deployment is slow, subsequent ones should be cached.
-        """
-        self.composer = Composer()
-        self.composer.registry.identifier = self.identifier
+        # load composer
+        self.composer = self.state.composer
+        assert self.composer is not None
+        assert self.composer.registry.identifier == self.identifier
         self.composer.pretty_print()
+
+        # load tokenizer
         self.tokenizer = load_tokenizer(self.pretrained_model_name_or_path)
         self.tokenizer.pad_token_id = (
             self.composer.tokenizer_config.pad_token_id
         )
+        assert (
+            self.composer.generation_config.pad_token_id
+            == self.tokenizer.eos_token_id
+        )
+
+        # load model
         self.model = load_model(
             self.pretrained_model_name_or_path,
             device_map=self.composer.llama_config.device_map,
         )
+
+        # load controlled vector
         self.controlled_vector = ControlVector.import_gguf(
             path=f"{self.composer.registry.save_directory}/{self.identifier}/{self.composer.registry.gguf_filename}"
         )
 
     @modal.method()
     def inference(self, serving_config: ServingConfig) -> GenerationOutput:
+        assert self.composer is not None
+
         wrapped_model = self.model
-        model = ControlModel(
+        self.model = ControlModel(
             wrapped_model, layer_ids=self.composer.llama_config.layer_ids
         )
         # update composer generation config
         self.composer.generation_config = GenerationConfig(
+            question=serving_config.question,
             max_new_tokens=serving_config.max_new_tokens,
             repetition_penalty=serving_config.repetition_penalty,
             temperature=serving_config.temperature,
             show_baseline=serving_config.show_baseline,
             coefficients=serving_config.coefficients,
-            question=serving_config.question,
+            pad_token_id=self.tokenizer.eos_token_id,
+            device=self.device,
         )
+        self.composer.pretty_print()
 
         output = generate(
             composer=self.composer,
-            model=model,
+            model=self.model,
             tokenizer=self.tokenizer,
-            input=serving_config.question,
+            input=chat_template_unparse(
+                [("user", f"{serving_config.question}")]
+            ),
             labeled_vectors=[
                 (f"{coef} * bridge_vector", coef * self.controlled_vector)
                 for coef in self.composer.generation_config.coefficients
