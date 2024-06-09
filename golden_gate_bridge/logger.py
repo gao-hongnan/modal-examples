@@ -3,7 +3,9 @@
 import logging
 
 
-def get_logger(name: str | None, level: int = logging.INFO) -> logging.Logger:
+def get_logger(
+    name: str | None = None, level: int = logging.INFO
+) -> logging.Logger:
     logger = logging.getLogger(name)
     handler = logging.StreamHandler()
     handler.setFormatter(
